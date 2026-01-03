@@ -22,9 +22,51 @@ Note that this library depends on cormoran's [**patched version** of @zmkfirmwar
 
 ## Quick Start
 
+### useZMKApp() react hook
+
+`useZMKApp()` maintains connection status and provides useful callback methods.
+
+```typescript
+import { useContext } from "react";
+import { useZMKApp, ZMKAppContext } from "@cormoran/zmk-studio-react-hook";
+import { connect as connect_serial } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+
+function App() {
+  const zmkApp = useZMKApp();
+
+  return (
+    <ZMKAppContext.Provider value={zmkApp}>
+      <ConnectionButton />
+      <DeviceInfo />
+    </ZMKAppContext.Provider>
+  );
+}
+
+function ConnectionButton() {
+  const zmkApp = useContext(ZMKAppContext);
+  if (!zmkApp) return null;
+
+  const handleConnect = () => zmkApp.connect(connect_serial);
+
+  return zmkApp.isConnected ? (
+    <button onClick={zmkApp.disconnect}>Disconnect</button>
+  ) : (
+    <button onClick={handleConnect}>Connect</button>
+  );
+}
+
+function DeviceInfo() {
+  const zmkApp = useContext(ZMKAppContext);
+  if (!zmkApp?.isConnected) return null;
+  return <div>Device: {zmkApp.state.deviceInfo?.name}</div>;
+}
+```
+
 ### Using ZMKConnection Component
 
-The library provides a headless `ZMKConnection` component that renders component based on connection status.
+`ZMKConnection` component provides common rendering pattern.
+
+`ZMKAppContext` is automatically provided for children.
 
 ```typescript
 import { ZMKConnection } from "@cormoran/zmk-studio-react-hook";
@@ -33,148 +75,65 @@ import { connect as connect_serial } from "@zmkfirmware/zmk-studio-ts-client/tra
 function MyComponent() {
   return (
     <ZMKConnection
-      connectFunction={connect_serial}
-      renderDisconnected={({ connect, isLoading, error }) => (
-        <div>
-          {isLoading && <div>Connecting...</div>}
-          {error && <div>Error: {error}</div>}
-          {!isLoading && <button onClick={connect}>Connect to Device</button>}
-        </div>
+      renderDisconnected={({ connect, isLoading }) => (
+        <button onClick={() => connect(connect_serial)} disabled={isLoading}>
+          {isLoading ? "Connecting..." : "Connect"}
+        </button>
       )}
-      renderConnected={({ disconnect, deviceName, subsystems }) => (
+      renderConnected={({ disconnect, deviceName }) => (
         <div>
-          <h2>Connected to: {deviceName}</h2>
+          <DeviceInfo />
           <button onClick={disconnect}>Disconnect</button>
-          <div>
-            {subsystems.map((sub) => (
-              <div key={sub.index}>
-                {sub.identifier} (Index: {sub.index})
-              </div>
-            ))}
-          </div>
         </div>
       )}
     />
   );
 }
-```
 
-### Using useZMKApp Hook Directly
-
-For more control, use the `useZMKApp` hook directly:
-
-```typescript
-import { useZMKApp } from "@cormoran/zmk-studio-react-hook";
-import { connect as connect_serial } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
-
-function MyComponent() {
-  const { state, connect, disconnect, isConnected } = useZMKApp();
-
-  const handleConnect = async () => {
-    await connect(connect_serial);
-  };
-
-  if (state.isLoading) {
-    return <div>Connecting...</div>;
-  }
-
-  if (state.error) {
-    return <div>Error: {state.error}</div>;
-  }
-
-  if (!isConnected) {
-    return <button onClick={handleConnect}>Connect to Device</button>;
-  }
-
-  return (
-    <div>
-      <h2>Connected to: {state.deviceInfo?.name}</h2>
-      <button onClick={disconnect}>Disconnect</button>
-
-      {state.customSubsystems?.subsystems.map((sub) => (
-        <div key={sub.index}>
-          {sub.identifier} (Index: {sub.index})
-        </div>
-      ))}
-    </div>
-  );
+function DeviceInfo() {
+  const zmkApp = useContext(ZMKAppContext);
+  if (!zmkApp?.isConnected) return null;
+  return <div>Device: {zmkApp.state.deviceInfo?.name}</div>;
 }
 ```
 
-### Using ZMKCustomSubsystem to interact with your ZMK module
+### Working with Custom Subsystems
 
-Custom subsystem is unofficial patch being developed in [cormoran/zmk#v0.3+custom-studio-protocol](https://github.com/cormoran/zmk/tree/v0.3%2Bcustom-studio-protocol).
-
-Below code provides interaction with ZMK module which implements the unofficial custom subsystem.
+Interact with custom RPC subsystems on your ZMK device:
 
 ```typescript
-import {
-  useZMKApp,
-  ZMKCustomSubsystem,
-} from "@cormoran/zmk-studio-react-hook";
+import { useZMKApp, ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
 import { useEffect, useState } from "react";
 
 function MyComponent() {
-  const { state, connect, isConnected, findSubsystem } = useZMKApp();
+  const { state, findSubsystem, onNotification } = useZMKApp();
   const [service, setService] = useState<ZMKCustomSubsystem | null>(null);
 
   useEffect(() => {
-    if (state.connection && state.customSubsystems) {
-      // Replace 'your_identifier' with the actual identifier string for your subsystem
-      const found = findSubsystem("your_identifier");
-      if (found) {
-        setService(new ZMKCustomSubsystem(state.connection, found.index));
-      }
+    if (!state.connection) return;
+
+    const subsystem = findSubsystem("your_identifier");
+    if (subsystem) {
+      setService(new ZMKCustomSubsystem(state.connection, subsystem.index));
+
+      // Subscribe to notifications
+      return onNotification({
+        type: "custom",
+        subsystemIndex: subsystem.index,
+        callback: (notification) => console.log(notification.payload),
+      });
     }
-  }, [state.connection, state.customSubsystems, findSubsystem]);
+  }, [state.connection, findSubsystem, onNotification]);
 
   const sendRPC = async () => {
     if (service) {
-      const payload = new Uint8Array([1, 2, 3]); // Your protobuf payload
+      const payload = new Uint8Array([1, 2, 3]);
       const response = await service.callRPC(payload);
       console.log("Response:", response);
     }
   };
 
-  return (
-    <div>
-      {isConnected && service && <button onClick={sendRPC}>Send RPC</button>}
-    </div>
-  );
-}
-```
-
-### Handling Custom Notifications from your ZMK module
-
-```typescript
-import { useZMKApp } from "@cormoran/zmk-studio-react-hook";
-import { useEffect } from "react";
-
-function MyComponent() {
-  const { findSubsystem, onNotification, isConnected } = useZMKApp();
-
-  useEffect(() => {
-    if (!isConnected) return;
-
-    // Replace 'your_identifier' with the actual identifier string for your subsystem
-    const found = findSubsystem("your_identifier");
-    if (!found) return;
-
-    // Subscribe to custom notifications from the found subsystem
-    const unsubscribe = onNotification({
-      type: "custom",
-      subsystemIndex: found.index,
-      callback: (notification) => {
-        console.log("Received custom notification:", notification);
-        console.log("Payload:", notification.payload);
-      },
-    });
-
-    // Cleanup subscription on unmount
-    return unsubscribe;
-  }, [isConnected, findSubsystem, onNotification]);
-
-  return <div>...</div>;
+  return <button onClick={sendRPC}>Send RPC</button>;
 }
 ```
 
@@ -189,6 +148,7 @@ The library exports the following from `index.ts`:
 **Components and Hooks:**
 
 - `useZMKApp` - Main hook for ZMK device connection management
+- `ZMKAppContext` - React Context for sharing ZMK app state across components
 - `ZMKConnection` - Headless React component for connection UI
 - `ZMKCustomSubsystem` - Service class for custom RPC communication
 - `ZMKCustomSubsystemError` - Error class for subsystem operations
@@ -199,6 +159,51 @@ The library exports the following from `index.ts`:
 - `UseZMKAppReturn` - Return type interface for useZMKApp
 - `NotificationSubscription` - Notification subscription type union
 - `ZMKConnectionProps` - Props interface for ZMKConnection component
+
+### `ZMKAppContext`
+
+React Context for sharing ZMK app state across multiple components. Use standard React Context patterns with this context.
+
+**Type:**
+
+```typescript
+const ZMKAppContext: React.Context<UseZMKAppReturn | null>;
+```
+
+**Usage:**
+
+```typescript
+import { useContext } from "react";
+import { useZMKApp, ZMKAppContext } from "@cormoran/zmk-studio-react-hook";
+
+function App() {
+  const zmkApp = useZMKApp();
+  return (
+    <ZMKAppContext.Provider value={zmkApp}>
+      <YourComponents />
+    </ZMKAppContext.Provider>
+  );
+}
+
+function MyComponent() {
+  const zmkApp = useContext(ZMKAppContext);
+  if (!zmkApp) return null;
+
+  const { state, connect, disconnect } = zmkApp;
+  // ... use ZMK app state
+}
+```
+
+**For Coding Agents:**
+
+- This is a standard React Context, use `useContext(ZMKAppContext)` to access it
+- Always check for `null` when consuming the context (defensive programming)
+- Create the ZMK app instance with `useZMKApp()` in a parent component
+- Provide the instance via `<ZMKAppContext.Provider value={zmkApp}>`
+- All child components can access the same ZMK app instance
+- Prevents accidental creation of multiple ZMK app instances
+- Should be provided high in the component tree, typically at app root
+- `ZMKConnection` component automatically provides this context to its children
 
 ### `useZMKApp()`
 
@@ -322,9 +327,9 @@ Headless React component for connection management. Provides connection logic wi
 
 ```typescript
 interface ZMKConnectionProps {
-  connectFunction: () => Promise<RpcTransport>;
+  zmkApp?: UseZMKAppReturn; // Optional: use external ZMK app state
   renderDisconnected: (props: {
-    connect: () => Promise<void>;
+    connect: (connectFunction: () => Promise<RpcTransport>) => Promise<void>;
     isLoading: boolean;
     error: string | null;
   }) => React.ReactNode;
@@ -341,7 +346,9 @@ interface ZMKConnectionProps {
 
 **Component Behavior:**
 
-- Internally uses `useZMKApp()` hook
+- If `zmkApp` prop is provided: Uses that external ZMK app instance (allows parent to control state)
+- If `zmkApp` prop is NOT provided: Creates internal `useZMKApp()` instance
+- Always provides `ZMKAppContext` to children (accessible via `useZMKAppContext()`)
 - Renders `renderDisconnected` when `isConnected === false`
 - Renders `renderConnected` when `isConnected === true`
 - Transforms `state.customSubsystems.subsystems` into simple `{index, identifier}` array
@@ -352,7 +359,13 @@ interface ZMKConnectionProps {
 
 - This is a render-props pattern component
 - Return type must be `React.ReactElement`, not just `React.ReactNode`
-- The component does not manage any state itself, just wraps useZMKApp
+- When `zmkApp` prop is provided, the component does not create its own state
+- When `zmkApp` prop is NOT provided, it internally calls `useZMKApp()`
+- Always wraps content in `ZMKAppContextProvider` for child component access
+- The `zmkApp` prop enables two patterns:
+  1. **Standalone**: `<ZMKConnection />` (creates own state)
+  2. **Controlled**: `<ZMKConnection zmkApp={zmkApp} />` (uses external state)
+- Children of rendered content can use `useZMKAppContext()` to access ZMK state
 
 ### `ZMKCustomSubsystem`
 

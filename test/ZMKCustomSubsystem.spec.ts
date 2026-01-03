@@ -91,6 +91,24 @@ describe("ZMKCustomSubsystem", () => {
         "RPC failed"
       );
     });
+
+    it("should timeout after timeout", async () => {
+      const { call_rpc } = require("@zmkfirmware/zmk-studio-ts-client");
+      // Make call_rpc never resolve
+      (call_rpc as jest.Mock).mockImplementation(
+        () => new Promise(() => {}) // Never resolves
+      );
+
+      const startTime = Date.now();
+      await expect(
+        service.callRPC(new Uint8Array([1, 2, 3]), { timeout: 1000 })
+      ).rejects.toThrow("Operation timed out");
+      const elapsed = Date.now() - startTime;
+
+      // Should timeout around 1000ms, not 5000ms
+      expect(elapsed).toBeLessThan(2000);
+      expect(elapsed).toBeGreaterThanOrEqual(1000);
+    }, 3000);
   });
 
   describe("isReady", () => {

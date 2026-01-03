@@ -5,6 +5,7 @@
 
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
+import { withTimeout } from "./utils";
 
 /**
  * Service class for communicating with ZMK custom subsystems via RPC
@@ -35,18 +36,27 @@ export class ZMKCustomSubsystem {
   /**
    * Send an RPC request to this subsystem
    * @param payload - Serialized protobuf payload to send
+   * @param options - Optional configuration
+   * @param options.timeout - Timeout in milliseconds (default: 5000ms)
    * @returns The response payload from the device, or null if no response
-   * @throws Error if the RPC call fails
+   * @throws Error if the RPC call fails or times out
    */
-  async callRPC(payload: Uint8Array): Promise<Uint8Array | null> {
-    const response = await call_rpc(this.connection, {
-      custom: {
-        call: {
-          subsystemIndex: this.subsystemIndex,
-          payload,
+  async callRPC(
+    payload: Uint8Array,
+    options?: { timeout?: number }
+  ): Promise<Uint8Array | null> {
+    const timeout = options?.timeout ?? 5000;
+    const response = await withTimeout(
+      call_rpc(this.connection, {
+        custom: {
+          call: {
+            subsystemIndex: this.subsystemIndex,
+            payload,
+          },
         },
-      },
-    });
+      }),
+      timeout
+    );
     return response.custom?.call?.payload || null;
   }
 

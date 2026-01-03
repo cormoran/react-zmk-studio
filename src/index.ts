@@ -9,6 +9,8 @@ export {
   ZMKCustomSubsystemError,
 } from "./ZMKCustomSubsystem";
 export { ZMKConnection } from "./ZMKConnection";
+export { ZMKAppContext } from "./ZMKAppContext";
+export { withTimeout } from "./utils";
 
 export type {
   ZMKAppState,

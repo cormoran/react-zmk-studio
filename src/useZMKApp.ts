@@ -17,6 +17,7 @@ import type {
   ListCustomSubsystemResponse,
   CustomNotification,
 } from "@zmkfirmware/zmk-studio-ts-client/custom";
+import { withTimeout } from "./utils";
 
 /**
  * Notification subscription types
@@ -217,9 +218,11 @@ export function useZMKApp(): UseZMKAppReturn {
     connection: RpcConnection
   ): Promise<GetDeviceInfoResponse | null> => {
     try {
-      const response = await call_rpc(connection, {
-        core: { getDeviceInfo: true },
-      });
+      const response = await withTimeout(
+        call_rpc(connection, {
+          core: { getDeviceInfo: true },
+        })
+      );
       return response.core?.getDeviceInfo || null;
     } catch (error) {
       console.error("Failed to get device info", error);
@@ -234,9 +237,11 @@ export function useZMKApp(): UseZMKAppReturn {
     connection: RpcConnection
   ): Promise<ListCustomSubsystemResponse | null> => {
     try {
-      const response = await call_rpc(connection, {
-        custom: { listCustomSubsystems: {} },
-      });
+      const response = await withTimeout(
+        call_rpc(connection, {
+          custom: { listCustomSubsystems: {} },
+        })
+      );
       return response.custom?.listCustomSubsystems || null;
     } catch (error) {
       console.error("Failed to get custom subsystems", error);
