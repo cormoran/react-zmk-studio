@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2020",
+    "lib": ["ES2022", "DOM"],
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "outDir": "./lib/",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react",
+    "resolveJsonModule": true,
+    "baseUrl": "."
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "lib", "test"]
+}
