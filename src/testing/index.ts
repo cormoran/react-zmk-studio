@@ -146,7 +146,8 @@ export function createMockZMKAppState(
 export function createMockZMKApp(
   overrides: Partial<UseZMKAppReturn> = {}
 ): UseZMKAppReturn {
-  const state = createMockZMKAppState(overrides.state);
+  const { state: stateOverride, ...restOverrides } = overrides;
+  const state = createMockZMKAppState(stateOverride);
   
   return {
     state,
@@ -155,7 +156,7 @@ export function createMockZMKApp(
     findSubsystem: jest.fn(),
     isConnected: state.connection !== null,
     onNotification: jest.fn().mockReturnValue(() => {}),
-    ...overrides,
+    ...restOverrides,
   };
 }
 

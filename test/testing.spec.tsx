@@ -236,6 +236,20 @@ describe("Test Helpers", () => {
 
       expect(zmkApp.connect).toBe(customConnect);
     });
+
+    it("should preserve state defaults when partial state is provided", () => {
+      const connection = createMockConnection();
+      const zmkApp = createMockZMKApp({
+        state: { connection } as any,
+      });
+
+      // The partial state should be merged with defaults, not replace them
+      expect(zmkApp.state.connection).toBe(connection);
+      expect(zmkApp.state.deviceInfo).toBeNull();
+      expect(zmkApp.state.customSubsystems).toBeNull();
+      expect(zmkApp.state.isLoading).toBe(false);
+      expect(zmkApp.state.error).toBeNull();
+    });
   });
 
   describe("createConnectedMockZMKApp", () => {
