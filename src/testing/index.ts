@@ -36,7 +36,7 @@ export function createMockTransport(): RpcTransport {
  * @param notifications - Array of notifications to emit (optional)
  * @returns A mock reader with controllable notification stream
  */
-export function createMockNotificationReader(notifications: any[] = []) {
+export function createMockNotificationReader(notifications: unknown[] = []) {
   let index = 0;
   return {
     read: jest.fn().mockImplementation(() => {
@@ -59,18 +59,18 @@ export function createMockNotificationReader(notifications: any[] = []) {
  */
 export function createMockConnection(options: {
   label?: string;
-  notifications?: any[];
+  notifications?: unknown[];
 } = {}): RpcConnection {
   const { label = "test", notifications = [] } = options;
 
   return {
     label,
     current_request: 0,
-    request_response_readable: {} as any,
-    request_writable: {} as any,
+    request_response_readable: {} as unknown,
+    request_writable: {} as unknown,
     notification_readable: {
       getReader: jest.fn().mockReturnValue(createMockNotificationReader(notifications)),
-    } as any,
+    } as unknown,
   } as RpcConnection;
 }
 
@@ -191,7 +191,7 @@ export function createMockZMKApp(
 export function createConnectedMockZMKApp(options: {
   deviceName?: string;
   subsystems?: string[];
-  notifications?: any[];
+  notifications?: unknown[];
 } = {}): UseZMKAppReturn {
   const {
     deviceName = "Test Device",
@@ -283,7 +283,8 @@ export function setupZMKMocks() {
   const mockTransport = createMockTransport();
   const mockConnection = createMockConnection();
 
-  // Get the mocked module
+  // Get the mocked module - dynamic import is necessary in test environment
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const zmkClient = require("@zmkfirmware/zmk-studio-ts-client");
 
   // Reset all mocks
@@ -296,7 +297,7 @@ export function setupZMKMocks() {
     deviceName?: string;
     deviceInfo?: Partial<GetDeviceInfoResponse>;
     subsystems?: string[];
-    notifications?: any[];
+    notifications?: unknown[];
   } = {}) {
     const {
       deviceName = "Test Device",
