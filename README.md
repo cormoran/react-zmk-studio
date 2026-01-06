@@ -137,6 +137,203 @@ function MyComponent() {
 }
 ```
 
+## Testing
+
+This library provides comprehensive test helpers to make testing your ZMK-based applications easier.
+
+### Installation for Testing
+
+The test helpers are available as a separate export:
+
+```typescript
+import {
+  setupZMKMocks,
+  createMockZMKApp,
+  createConnectedMockZMKApp,
+  ZMKAppProvider,
+} from "@cormoran/zmk-studio-react-hook/testing";
+```
+
+### Quick Start
+
+#### Testing Components that Use ZMKAppContext
+
+Use `ZMKAppProvider` to provide mock ZMK app state to your components:
+
+```typescript
+import { render, screen } from "@testing-library/react";
+import { ZMKAppProvider, createMockZMKApp } from "@cormoran/zmk-studio-react-hook/testing";
+import { MyComponent } from "./MyComponent";
+
+test("renders device name", () => {
+  const mockZMKApp = createMockZMKApp({
+    state: {
+      deviceInfo: { name: "Test Device", serialNumber: new Uint8Array() },
+      isConnected: true,
+    },
+  });
+
+  render(
+    <ZMKAppProvider value={mockZMKApp}>
+      <MyComponent />
+    </ZMKAppProvider>
+  );
+
+  expect(screen.getByText("Test Device")).toBeInTheDocument();
+});
+```
+
+#### Testing with useZMKApp Hook
+
+Use `setupZMKMocks()` to easily mock the ZMK client:
+
+```typescript
+import { renderHook, act } from "@testing-library/react";
+import { useZMKApp } from "@cormoran/zmk-studio-react-hook";
+import { setupZMKMocks } from "@cormoran/zmk-studio-react-hook/testing";
+
+jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
+  create_rpc_connection: jest.fn(),
+  call_rpc: jest.fn(),
+}));
+
+describe("My Hook", () => {
+  let mocks: ReturnType<typeof setupZMKMocks>;
+
+  beforeEach(() => {
+    mocks = setupZMKMocks();
+  });
+
+  test("connects to device", async () => {
+    const { result } = renderHook(() => useZMKApp());
+
+    mocks.mockSuccessfulConnection({
+      deviceName: "My Device",
+      subsystems: ["my-subsystem"],
+    });
+
+    const connectFn = jest.fn().mockResolvedValue(mocks.mockTransport);
+
+    await act(async () => {
+      await result.current.connect(connectFn);
+    });
+
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.state.deviceInfo?.name).toBe("My Device");
+  });
+});
+```
+
+### Common Testing Patterns
+
+<details>
+<summary>Click to expand common testing patterns</summary>
+
+#### Testing Connected State
+
+```typescript
+const mockZMKApp = createConnectedMockZMKApp({
+  deviceName: "My Keyboard",
+  subsystems: ["led-control", "battery-monitor"],
+});
+
+render(
+  <ZMKAppProvider value={mockZMKApp}>
+    <DeviceStatus />
+  </ZMKAppProvider>
+);
+```
+
+#### Testing Disconnected State
+
+```typescript
+const mockZMKApp = createMockZMKApp({
+  isConnected: false,
+  state: {
+    isLoading: false,
+    error: null,
+  },
+});
+```
+
+#### Testing Connection Errors
+
+```typescript
+test("handles connection errors", async () => {
+  const { result } = renderHook(() => useZMKApp());
+  
+  const error = new Error("Connection failed");
+  const connectFn = jest.fn().mockRejectedValue(error);
+
+  await act(async () => {
+    await result.current.connect(connectFn);
+  });
+
+  expect(result.current.state.error).toBe("Connection failed");
+});
+```
+
+#### Testing Notifications
+
+```typescript
+test("receives custom notifications", async () => {
+  const { result } = renderHook(() => useZMKApp());
+
+  const notification = {
+    custom: {
+      customNotification: {
+        subsystemIndex: 0,
+        payload: new Uint8Array([1, 2, 3]),
+      },
+    },
+  };
+
+  mocks.mockSuccessfulConnection({
+    subsystems: ["my-subsystem"],
+    notifications: [notification],
+  });
+
+  const callback = jest.fn();
+  result.current.onNotification({
+    type: "custom",
+    subsystemIndex: 0,
+    callback,
+  });
+
+  await act(async () => {
+    await result.current.connect(connectFn);
+  });
+
+  await waitFor(() => {
+    expect(callback).toHaveBeenCalled();
+  });
+});
+```
+
+#### Testing findSubsystem
+
+```typescript
+test("finds subsystem by identifier", async () => {
+  const { result } = renderHook(() => useZMKApp());
+
+  mocks.mockSuccessfulConnection({
+    subsystems: ["subsystem1", "subsystem2"],
+  });
+
+  await act(async () => {
+    await result.current.connect(connectFn);
+  });
+
+  const found = result.current.findSubsystem("subsystem2");
+  expect(found).toMatchObject({
+    index: 1,
+    identifier: "subsystem2",
+  });
+});
+```
+
+</details>
+
 ## API Reference For Coding Agent
 
 This section provides comprehensive API documentation for coding agents to use or fix this library.
@@ -433,6 +630,66 @@ constructor(
 - This class is exported but not currently thrown by ZMKCustomSubsystem
 - Can be used in user code for consistent error handling
 - Extends native `Error` class
+
+### Test Helper API (from `@cormoran/zmk-studio-react-hook/testing`)
+
+The library provides comprehensive test utilities to simplify testing applications that use ZMK hooks.
+
+#### Mock Factories
+
+- **`createMockTransport()`** - Creates a mock RPC transport with required properties
+- **`createMockConnection(options?)`** - Creates a mock RPC connection
+  - `options.label` - Connection label (default: "test")
+  - `options.notifications` - Array of notifications to emit
+- **`createMockDeviceInfo(overrides?)`** - Creates mock device info
+  - `overrides` - Partial properties to override defaults
+- **`createMockSubsystems(subsystems?)`** - Creates mock subsystems list
+  - `subsystems` - Array of string identifiers or objects with `{index, identifier, uiUrl?}`
+- **`createMockZMKApp(overrides?)`** - Creates a mock ZMK app instance
+  - `overrides` - Partial properties to override default mock
+- **`createConnectedMockZMKApp(options?)`** - Creates a connected mock ZMK app
+  - `options.deviceName` - Device name (default: "Test Device")
+  - `options.subsystems` - Array of subsystem identifiers
+  - `options.notifications` - Array of notifications to emit
+
+#### Test Wrapper Components
+
+- **`ZMKAppProvider({ children, value })`** - Provides ZMKAppContext to children
+  - `children` - React children to wrap
+  - `value` - Mock ZMK app instance or null
+  - Returns ZMKAppContext.Provider with the provided value
+
+#### Setup Helpers
+
+- **`setupZMKMocks()`** - Sets up common mocks for `@zmkfirmware/zmk-studio-ts-client`
+  - Must be called in `beforeEach()` to reset mocks
+  - Returns object with:
+    - `mockTransport` - Mock transport instance
+    - `mockConnection` - Mock connection instance
+    - `create_rpc_connection` - Mock function reference
+    - `call_rpc` - Mock function reference
+    - `mockSuccessfulConnection(options)` - Configure successful connection
+      - `options.deviceName` - Device name
+      - `options.deviceInfo` - Partial device info overrides
+      - `options.subsystems` - Array of subsystem identifiers
+      - `options.notifications` - Array of notifications
+    - `mockFailedConnection(error)` - Configure failed connection
+      - `error` - Error message string or Error object
+    - `mockFailedDeviceInfo()` - Configure device info retrieval failure
+
+#### Utility Functions
+
+- **`waitForNotification(callback, timeout?)`** - Waits for notification callback to be called
+  - `callback` - Jest mock function to wait for
+  - `timeout` - Maximum wait time in milliseconds (default: 1000)
+  - Returns Promise that resolves when callback is called or rejects on timeout
+
+#### Implementation Notes
+
+- All mock factories use proper TypeScript types
+- `setupZMKMocks()` uses `require()` for dynamic import in test environment (with eslint disable)
+- Mock connections use `unknown` type casts to avoid type errors in test environment
+- Notification reader mocks never resolve after emitting all notifications (simulates waiting)
 
 ## Code Verification Instructions for Agents
 
