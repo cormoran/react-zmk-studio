@@ -9,8 +9,6 @@ import React from "react";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import type { GetDeviceInfoResponse } from "@zmkfirmware/zmk-studio-ts-client/core";
-import type { Notification as CoreNotification } from "@zmkfirmware/zmk-studio-ts-client/core";
-import type { Notification as KeymapNotification } from "@zmkfirmware/zmk-studio-ts-client/keymap";
 import type {
   ListCustomSubsystemResponse,
   CustomNotification,
@@ -104,28 +102,6 @@ export function createMockSubsystems(
         : { uiUrl: [], ...item }
     ),
   };
-}
-
-/**
- * Creates a mock core notification for testing
- * @param notification - The notification data (e.g., { lockStateChanged: LockState.ZMK_STUDIO_CORE_LOCK_STATE_LOCKED })
- * @returns A mock CoreNotification
- */
-export function createCoreNotification(
-  notification: Partial<CoreNotification>
-): CoreNotification {
-  return notification as CoreNotification;
-}
-
-/**
- * Creates a mock keymap notification for testing
- * @param notification - The notification data (e.g., { unsavedChangesStatusChanged: true })
- * @returns A mock KeymapNotification
- */
-export function createKeymapNotification(
-  notification: Partial<KeymapNotification>
-): KeymapNotification {
-  return notification as KeymapNotification;
 }
 
 /**

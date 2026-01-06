@@ -224,52 +224,10 @@ describe("My Hook", () => {
 });
 ```
 
-### Test Helper API
-
-#### Mock Factories
-
-- **`createMockTransport()`** - Creates a mock RPC transport
-- **`createMockConnection(options?)`** - Creates a mock RPC connection
-  - `options.label` - Connection label (default: "test")
-  - `options.notifications` - Array of notifications to emit
-- **`createMockDeviceInfo(overrides?)`** - Creates mock device info
-- **`createMockSubsystems(subsystems?)`** - Creates mock subsystems list
-  - Pass array of string identifiers or objects with `{index, identifier, uiUrl?}`
-- **`createMockZMKApp(overrides?)`** - Creates a mock ZMK app instance
-- **`createConnectedMockZMKApp(options?)`** - Creates a connected mock ZMK app
-  - `options.deviceName` - Device name (default: "Test Device")
-  - `options.subsystems` - Array of subsystem identifiers
-  - `options.notifications` - Array of notifications
-
-#### Test Wrapper Components
-
-- **`ZMKAppProvider`** - Provides ZMKAppContext to children
-  ```typescript
-  <ZMKAppProvider value={mockZMKApp}>
-    <YourComponent />
-  </ZMKAppProvider>
-  ```
-
-#### Setup Helpers
-
-- **`setupZMKMocks()`** - Sets up common mocks for `@zmkfirmware/zmk-studio-ts-client`
-  - Returns object with:
-    - `mockTransport` - Mock transport instance
-    - `mockConnection` - Mock connection instance
-    - `create_rpc_connection` - Mock function reference
-    - `call_rpc` - Mock function reference
-    - `mockSuccessfulConnection(options)` - Configure successful connection
-    - `mockFailedConnection(error)` - Configure failed connection
-    - `mockFailedDeviceInfo()` - Configure device info failure
-
-#### Notification Helpers
-
-- **`createCoreNotification(notification)`** - Creates core notification
-- **`createKeymapNotification(notification)`** - Creates keymap notification
-- **`createCustomNotification(subsystemIndex, payload?)`** - Creates custom notification
-- **`waitForNotification(callback, timeout?)`** - Waits for notification callback to be called
-
 ### Common Testing Patterns
+
+<details>
+<summary>Click to expand common testing patterns</summary>
 
 #### Testing Connected State
 
@@ -373,6 +331,8 @@ test("finds subsystem by identifier", async () => {
   });
 });
 ```
+
+</details>
 
 ## API Reference For Coding Agent
 
@@ -670,6 +630,66 @@ constructor(
 - This class is exported but not currently thrown by ZMKCustomSubsystem
 - Can be used in user code for consistent error handling
 - Extends native `Error` class
+
+### Test Helper API (from `@cormoran/zmk-studio-react-hook/testing`)
+
+The library provides comprehensive test utilities to simplify testing applications that use ZMK hooks.
+
+#### Mock Factories
+
+- **`createMockTransport()`** - Creates a mock RPC transport with required properties
+- **`createMockConnection(options?)`** - Creates a mock RPC connection
+  - `options.label` - Connection label (default: "test")
+  - `options.notifications` - Array of notifications to emit
+- **`createMockDeviceInfo(overrides?)`** - Creates mock device info
+  - `overrides` - Partial properties to override defaults
+- **`createMockSubsystems(subsystems?)`** - Creates mock subsystems list
+  - `subsystems` - Array of string identifiers or objects with `{index, identifier, uiUrl?}`
+- **`createMockZMKApp(overrides?)`** - Creates a mock ZMK app instance
+  - `overrides` - Partial properties to override default mock
+- **`createConnectedMockZMKApp(options?)`** - Creates a connected mock ZMK app
+  - `options.deviceName` - Device name (default: "Test Device")
+  - `options.subsystems` - Array of subsystem identifiers
+  - `options.notifications` - Array of notifications to emit
+
+#### Test Wrapper Components
+
+- **`ZMKAppProvider({ children, value })`** - Provides ZMKAppContext to children
+  - `children` - React children to wrap
+  - `value` - Mock ZMK app instance or null
+  - Returns ZMKAppContext.Provider with the provided value
+
+#### Setup Helpers
+
+- **`setupZMKMocks()`** - Sets up common mocks for `@zmkfirmware/zmk-studio-ts-client`
+  - Must be called in `beforeEach()` to reset mocks
+  - Returns object with:
+    - `mockTransport` - Mock transport instance
+    - `mockConnection` - Mock connection instance
+    - `create_rpc_connection` - Mock function reference
+    - `call_rpc` - Mock function reference
+    - `mockSuccessfulConnection(options)` - Configure successful connection
+      - `options.deviceName` - Device name
+      - `options.deviceInfo` - Partial device info overrides
+      - `options.subsystems` - Array of subsystem identifiers
+      - `options.notifications` - Array of notifications
+    - `mockFailedConnection(error)` - Configure failed connection
+      - `error` - Error message string or Error object
+    - `mockFailedDeviceInfo()` - Configure device info retrieval failure
+
+#### Utility Functions
+
+- **`waitForNotification(callback, timeout?)`** - Waits for notification callback to be called
+  - `callback` - Jest mock function to wait for
+  - `timeout` - Maximum wait time in milliseconds (default: 1000)
+  - Returns Promise that resolves when callback is called or rejects on timeout
+
+#### Implementation Notes
+
+- All mock factories use proper TypeScript types
+- `setupZMKMocks()` uses `require()` for dynamic import in test environment (with eslint disable)
+- Mock connections use `unknown` type casts to avoid type errors in test environment
+- Notification reader mocks never resolve after emitting all notifications (simulates waiting)
 
 ## Code Verification Instructions for Agents
 

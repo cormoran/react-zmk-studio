@@ -10,8 +10,6 @@ import {
   createMockConnection,
   createMockDeviceInfo,
   createMockSubsystems,
-  createCoreNotification,
-  createKeymapNotification,
   createCustomNotification,
   createMockZMKAppState,
   createMockZMKApp,
@@ -163,26 +161,6 @@ describe("Test Helpers", () => {
         identifier: "object-subsystem",
         uiUrl: [],
       });
-    });
-  });
-
-  describe("createCoreNotification", () => {
-    it("should create a core notification", () => {
-      const notification = createCoreNotification({
-        lockStateChanged: 0, // ZMK_STUDIO_CORE_LOCK_STATE_LOCKED
-      });
-
-      expect(notification.lockStateChanged).toEqual(0);
-    });
-  });
-
-  describe("createKeymapNotification", () => {
-    it("should create a keymap notification", () => {
-      const notification = createKeymapNotification({
-        unsavedChangesStatusChanged: true,
-      });
-
-      expect(notification.unsavedChangesStatusChanged).toBe(true);
     });
   });
 
