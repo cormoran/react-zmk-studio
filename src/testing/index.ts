@@ -9,10 +9,7 @@ import React from "react";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import type { GetDeviceInfoResponse } from "@zmkfirmware/zmk-studio-ts-client/core";
-import type {
-  ListCustomSubsystemResponse,
-  CustomNotification,
-} from "@zmkfirmware/zmk-studio-ts-client/custom";
+import type { ListCustomSubsystemResponse } from "@zmkfirmware/zmk-studio-ts-client/custom";
 import type { UseZMKAppReturn, ZMKAppState } from "../useZMKApp";
 import { ZMKAppContext } from "../ZMKAppContext";
 
@@ -101,22 +98,6 @@ export function createMockSubsystems(
         ? { index, identifier: item, uiUrl: [] }
         : { uiUrl: [], ...item }
     ),
-  };
-}
-
-/**
- * Creates a mock custom notification for testing
- * @param subsystemIndex - The subsystem index
- * @param payload - The payload data (optional)
- * @returns A mock CustomNotification
- */
-export function createCustomNotification(
-  subsystemIndex: number,
-  payload: Uint8Array = new Uint8Array([])
-): CustomNotification {
-  return {
-    subsystemIndex,
-    payload,
   };
 }
 

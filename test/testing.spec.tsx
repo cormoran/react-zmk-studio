@@ -10,7 +10,6 @@ import {
   createMockConnection,
   createMockDeviceInfo,
   createMockSubsystems,
-  createCustomNotification,
   createMockZMKAppState,
   createMockZMKApp,
   createConnectedMockZMKApp,
@@ -161,24 +160,6 @@ describe("Test Helpers", () => {
         identifier: "object-subsystem",
         uiUrl: [],
       });
-    });
-  });
-
-  describe("createCustomNotification", () => {
-    it("should create a custom notification", () => {
-      const payload = new Uint8Array([1, 2, 3]);
-      const notification = createCustomNotification(5, payload);
-
-      expect(notification.subsystemIndex).toBe(5);
-      expect(notification.payload).toEqual(payload);
-    });
-
-    it("should create a custom notification with empty payload by default", () => {
-      const notification = createCustomNotification(0);
-
-      expect(notification.subsystemIndex).toBe(0);
-      expect(notification.payload).toBeInstanceOf(Uint8Array);
-      expect(notification.payload.length).toBe(0);
     });
   });
 
