@@ -108,7 +108,7 @@ export function createMockSubsystems(
 
 /**
  * Creates a mock core notification for testing
- * @param notification - The notification data
+ * @param notification - The notification data (e.g., { lockStateChanged: LockState.ZMK_STUDIO_CORE_LOCK_STATE_LOCKED })
  * @returns A mock CoreNotification
  */
 export function createCoreNotification(
@@ -119,7 +119,7 @@ export function createCoreNotification(
 
 /**
  * Creates a mock keymap notification for testing
- * @param notification - The notification data
+ * @param notification - The notification data (e.g., { unsavedChangesStatusChanged: true })
  * @returns A mock KeymapNotification
  */
 export function createKeymapNotification(

@@ -266,9 +266,10 @@ describe("useZMKApp", () => {
   it("should handle core notifications", async () => {
     const { result } = renderHook(() => useZMKApp());
 
+    // LockState enum: 0 = ZMK_STUDIO_CORE_LOCK_STATE_LOCKED
     const coreNotification = {
       core: {
-        lockStateChanged: 0, // ZMK_STUDIO_CORE_LOCK_STATE_LOCKED
+        lockStateChanged: 0,
       },
     };
 
@@ -295,6 +296,7 @@ describe("useZMKApp", () => {
 
     // Wait for notification to be processed
     await waitFor(() => {
+      // LockState enum: 0 = ZMK_STUDIO_CORE_LOCK_STATE_LOCKED
       expect(notificationCallback).toHaveBeenCalledWith({
         lockStateChanged: 0,
       });
