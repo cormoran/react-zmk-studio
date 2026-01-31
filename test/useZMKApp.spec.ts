@@ -346,4 +346,63 @@ describe("useZMKApp", () => {
     // Unsubscribe
     unsubscribe();
   });
+
+  it("should disconnect when notification reading fails", async () => {
+    const { result } = renderHook(() => useZMKApp());
+
+    // Create a mock reader that will throw an error
+    const mockReader = {
+      read: jest.fn().mockRejectedValue(new Error("Notification read failed")),
+      releaseLock: jest.fn(),
+    };
+
+    // Create a connection manually and override getReader before setting up mocks
+    const connection = createMockConnection({ notifications: [] });
+    connection.notification_readable.getReader = jest.fn().mockReturnValue(mockReader);
+
+    // Mock create_rpc_connection to return our custom connection
+    mocks.create_rpc_connection.mockReturnValue(connection);
+
+    // Mock call_rpc similar to mockSuccessfulConnection
+    mocks.call_rpc
+      .mockResolvedValueOnce({
+        core: {
+          getDeviceInfo: {
+            name: "Test Device",
+            serialNumber: new Uint8Array([1, 2, 3, 4]),
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        custom: {
+          listCustomSubsystems: {
+            subsystems: [],
+          },
+        },
+      });
+
+    const connectFunction = jest.fn().mockResolvedValue(mocks.mockTransport);
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    await act(async () => {
+      await result.current.connect(connectFunction);
+    });
+
+    // The connection should have been established and then immediately disconnected
+    // due to the notification reading error
+    await waitFor(() => {
+      expect(result.current.isConnected).toBe(false);
+    });
+
+    // Verify error was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Error reading notifications:",
+      expect.any(Error)
+    );
+
+    // Verify reader was released
+    expect(mockReader.releaseLock).toHaveBeenCalled();
+
+    consoleSpy.mockRestore();
+  });
 });
