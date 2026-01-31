@@ -356,7 +356,7 @@ describe("useZMKApp", () => {
       releaseLock: jest.fn(),
     };
 
-    // Create a connection manually and override getReader BEFORE setting up mocks
+    // Create a connection manually and override getReader before setting up mocks
     const connection = createMockConnection({ notifications: [] });
     connection.notification_readable.getReader = jest.fn().mockReturnValue(mockReader);
 
