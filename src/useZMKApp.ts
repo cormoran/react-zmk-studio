@@ -91,77 +91,6 @@ export function useZMKApp(): UseZMKAppReturn {
   >(new Map());
 
   /**
-   * Effect: Listen for incoming notifications from the device
-   * Automatically starts/stops when connection changes
-   */
-  useEffect(() => {
-    if (!state.connection) return;
-
-    const reader = state.connection.notification_readable.getReader();
-    const abortController = new AbortController();
-
-    /**
-     * Continuously read notifications from the stream and dispatch to subscribers
-     */
-    const processNotifications = async () => {
-      try {
-        while (!abortController.signal.aborted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Dispatch notifications based on type
-          if (value.core) {
-            dispatchNotification("core", value.core);
-          } else if (value.keymap) {
-            dispatchNotification("keymap", value.keymap);
-          } else if (value.custom?.customNotification) {
-            dispatchCustomNotification(value.custom.customNotification);
-          }
-        }
-      } catch (error) {
-        // Only log errors if we weren't intentionally aborted
-        if (!abortController.signal.aborted) {
-          console.error("Error reading notifications:", error);
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    };
-
-    processNotifications();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [state.connection]);
-
-  /**
-   * Dispatch notification to all registered callbacks for a given type
-   */
-  const dispatchNotification = <T extends "core" | "keymap">(
-    type: T,
-    notification: T extends "core" ? CoreNotification : KeymapNotification
-  ) => {
-    notificationCallbacksRef.current[type].forEach((callback) =>
-      callback(
-        notification as T extends "core" ? CoreNotification : KeymapNotification
-      )
-    );
-  };
-
-  /**
-   * Dispatch custom notification to all registered callbacks for a subsystem
-   */
-  const dispatchCustomNotification = (notification: CustomNotification) => {
-    const callbacks = customNotificationCallbacksRef.current.get(
-      notification.subsystemIndex
-    );
-    if (callbacks) {
-      callbacks.forEach((callback) => callback(notification));
-    }
-  };
-
-  /**
    * Connect to a ZMK device
    * @param connectFunction - Function that creates and returns the transport connection
    */
@@ -294,6 +223,78 @@ export function useZMKApp(): UseZMKAppReturn {
     },
     [state.customSubsystems]
   );
+
+  /**
+   * Effect: Listen for incoming notifications from the device
+   * Automatically starts/stops when connection changes
+   */
+  useEffect(() => {
+    if (!state.connection) return;
+
+    const reader = state.connection.notification_readable.getReader();
+    const abortController = new AbortController();
+
+    /**
+     * Continuously read notifications from the stream and dispatch to subscribers
+     */
+    const processNotifications = async () => {
+      try {
+        while (!abortController.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // Dispatch notifications based on type
+          if (value.core) {
+            dispatchNotification("core", value.core);
+          } else if (value.keymap) {
+            dispatchNotification("keymap", value.keymap);
+          } else if (value.custom?.customNotification) {
+            dispatchCustomNotification(value.custom.customNotification);
+          }
+        }
+      } catch (error) {
+        // Only log errors if we weren't intentionally aborted
+        if (!abortController.signal.aborted) {
+          console.error("Error reading notifications:", error);
+          disconnect();
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    };
+
+    processNotifications();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [state.connection, disconnect]);
+
+  /**
+   * Dispatch notification to all registered callbacks for a given type
+   */
+  const dispatchNotification = <T extends "core" | "keymap">(
+    type: T,
+    notification: T extends "core" ? CoreNotification : KeymapNotification
+  ) => {
+    notificationCallbacksRef.current[type].forEach((callback) =>
+      callback(
+        notification as T extends "core" ? CoreNotification : KeymapNotification
+      )
+    );
+  };
+
+  /**
+   * Dispatch custom notification to all registered callbacks for a subsystem
+   */
+  const dispatchCustomNotification = (notification: CustomNotification) => {
+    const callbacks = customNotificationCallbacksRef.current.get(
+      notification.subsystemIndex
+    );
+    if (callbacks) {
+      callbacks.forEach((callback) => callback(notification));
+    }
+  };
 
   /**
    * Subscribe to notifications
