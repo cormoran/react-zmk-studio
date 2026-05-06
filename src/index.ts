@@ -5,7 +5,10 @@
 
 export { useZMKApp } from "./useZMKApp";
 export { useZMKCustomSubsystem } from "./useZMKCustomSubsystem";
-export { ZMKCustomSubsystem, ZMKCustomSubsystemError } from "./ZMKCustomSubsystem";
+export {
+  ZMKCustomSubsystem,
+  ZMKCustomSubsystemError,
+} from "./ZMKCustomSubsystem";
 export { ZMKConnection } from "./ZMKConnection";
 export {
   ZMKAppContext,
@@ -24,5 +27,6 @@ export type {
   UseZMKCustomSubsystemReturn,
   ZMKCustomSubsystemMatch,
 } from "./useZMKCustomSubsystem";
+export type { ProtobufDecoder, ProtobufEncoder } from "./ZMKCustomSubsystem";
 export type { ZMKConnectionProps } from "./ZMKConnection";
 export type { ZMKAppProviderProps } from "./ZMKAppContext";

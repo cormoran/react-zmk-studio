@@ -7,6 +7,14 @@ import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
 import { withTimeout } from "./utils";
 
+export interface ProtobufEncoder<T> {
+  encode(message: T): { finish(): Uint8Array };
+}
+
+export interface ProtobufDecoder<T> {
+  decode(payload: Uint8Array): T;
+}
+
 /**
  * Service class for communicating with ZMK custom subsystems via RPC
  *
@@ -58,6 +66,35 @@ export class ZMKCustomSubsystem {
       timeout
     );
     return response.custom?.call?.payload || null;
+  }
+
+  /**
+   * Send an encoded protobuf request and decode the protobuf response.
+   */
+  async callTyped<TRequest, TResponse>(
+    requestType: ProtobufEncoder<TRequest>,
+    responseType: ProtobufDecoder<TResponse>,
+    request: TRequest,
+    options?: { timeout?: number }
+  ): Promise<TResponse | null> {
+    const payload = requestType.encode(request).finish();
+    const responsePayload = await this.callRPC(payload, options);
+
+    if (!responsePayload) {
+      return null;
+    }
+
+    return responseType.decode(responsePayload);
+  }
+
+  /**
+   * Decode a custom subsystem payload into a protobuf message.
+   */
+  decodePayload<T>(
+    responseType: ProtobufDecoder<T>,
+    payload: Uint8Array
+  ): T {
+    return responseType.decode(payload);
   }
 
   /**

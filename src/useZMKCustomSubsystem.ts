@@ -3,9 +3,14 @@
  * Resolves a custom subsystem from the current app context.
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
-import { ZMKCustomSubsystem } from "./ZMKCustomSubsystem";
+import type { CustomNotification } from "@zmkfirmware/zmk-studio-ts-client/custom";
+import {
+  ZMKCustomSubsystem,
+  type ProtobufDecoder,
+  type ProtobufEncoder,
+} from "./ZMKCustomSubsystem";
 import { useZMKAppContext } from "./ZMKAppContext";
 
 export interface ZMKCustomSubsystemMatch {
@@ -34,6 +39,31 @@ export interface UseZMKCustomSubsystemReturn {
    * Reusable RPC helper for this subsystem.
    */
   service: ZMKCustomSubsystem | null;
+  /**
+   * Make a typed request against this subsystem when available.
+   */
+  callTyped: <TRequest, TResponse>(
+    requestType: ProtobufEncoder<TRequest>,
+    responseType: ProtobufDecoder<TResponse>,
+    request: TRequest,
+    options?: { timeout?: number }
+  ) => Promise<TResponse | null>;
+  /**
+   * Subscribe to raw custom notifications for this subsystem.
+   */
+  onNotification: (
+    callback: (notification: CustomNotification) => void
+  ) => () => void;
+  /**
+   * Subscribe to decoded custom notifications for this subsystem.
+   */
+  onTypedNotification: <TNotification>(
+    notificationType: ProtobufDecoder<TNotification>,
+    callback: (
+      notification: TNotification,
+      rawNotification: CustomNotification
+    ) => void
+  ) => () => void;
   /**
    * Whether the subsystem exists on the connected device.
    */
@@ -75,6 +105,53 @@ export function useZMKCustomSubsystem(
   }, [connection, subsystem]);
 
   const subsystemIndex = subsystem?.index ?? null;
+  const onNotification = useCallback(
+    (callback: (notification: CustomNotification) => void) => {
+      if (!zmkApp || subsystemIndex === null) {
+        return () => {};
+      }
+
+      return zmkApp.onNotification({
+        type: "custom",
+        subsystemIndex,
+        callback,
+      });
+    },
+    [subsystemIndex, zmkApp]
+  );
+
+  const onTypedNotification = useCallback(
+    <TNotification,>(
+      notificationType: ProtobufDecoder<TNotification>,
+      callback: (
+        notification: TNotification,
+        rawNotification: CustomNotification
+      ) => void
+    ) =>
+      onNotification((notification) =>
+        callback(
+          notificationType.decode(notification.payload),
+          notification
+        )
+      ),
+    [onNotification]
+  );
+
+  const callTyped = useCallback(
+    async <TRequest, TResponse>(
+      requestType: ProtobufEncoder<TRequest>,
+      responseType: ProtobufDecoder<TResponse>,
+      request: TRequest,
+      options?: { timeout?: number }
+    ) => {
+      if (!service) {
+        return null;
+      }
+
+      return service.callTyped(requestType, responseType, request, options);
+    },
+    [service]
+  );
 
   return {
     zmkApp,
@@ -82,6 +159,9 @@ export function useZMKCustomSubsystem(
     subsystem,
     subsystemIndex,
     service,
+    callTyped,
+    onNotification,
+    onTypedNotification,
     isAvailable: subsystem !== null,
     isReady: service !== null,
   };
