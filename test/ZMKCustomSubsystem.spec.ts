@@ -17,6 +17,16 @@ describe("ZMKCustomSubsystem", () => {
   let mockConnection: RpcConnection;
   let service: ZMKCustomSubsystem;
   const subsystemIndex = 5;
+  const mockRequestType = {
+    encode: jest.fn().mockImplementation((message) => ({
+      finish: () => new Uint8Array(message.payload),
+    })),
+  };
+  const mockResponseType = {
+    decode: jest.fn().mockImplementation((payload: Uint8Array) => ({
+      decoded: Array.from(payload),
+    })),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -109,6 +119,61 @@ describe("ZMKCustomSubsystem", () => {
       expect(elapsed).toBeLessThan(2000);
       expect(elapsed).toBeGreaterThanOrEqual(1000);
     }, 3000);
+  });
+
+  describe("callTyped", () => {
+    it("should encode the request and decode the response", async () => {
+      const { call_rpc } = require("@zmkfirmware/zmk-studio-ts-client");
+      const responsePayload = new Uint8Array([9, 8, 7]);
+
+      (call_rpc as jest.Mock).mockResolvedValue({
+        custom: {
+          call: {
+            payload: responsePayload,
+          },
+        },
+      });
+
+      const result = await service.callTyped(
+        mockRequestType,
+        mockResponseType,
+        { payload: [1, 2, 3] }
+      );
+
+      expect(mockRequestType.encode).toHaveBeenCalledWith({ payload: [1, 2, 3] });
+      expect(mockResponseType.decode).toHaveBeenCalledWith(responsePayload);
+      expect(result).toEqual({ decoded: [9, 8, 7] });
+    });
+
+    it("should return null when the RPC call returns no payload", async () => {
+      const { call_rpc } = require("@zmkfirmware/zmk-studio-ts-client");
+
+      (call_rpc as jest.Mock).mockResolvedValue({
+        custom: {
+          call: {},
+        },
+      });
+
+      const result = await service.callTyped(
+        mockRequestType,
+        mockResponseType,
+        { payload: [1, 2, 3] }
+      );
+
+      expect(result).toBeNull();
+      expect(mockResponseType.decode).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("decodePayload", () => {
+    it("should decode a raw payload with the provided decoder", () => {
+      const payload = new Uint8Array([4, 5, 6]);
+
+      const result = service.decodePayload(mockResponseType, payload);
+
+      expect(mockResponseType.decode).toHaveBeenCalledWith(payload);
+      expect(result).toEqual({ decoded: [4, 5, 6] });
+    });
   });
 
   describe("isReady", () => {
