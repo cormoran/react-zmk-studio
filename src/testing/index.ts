@@ -5,13 +5,12 @@
  * It includes mock factories, test wrappers, and fixtures to simplify testing.
  */
 
-import React from "react";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import type { GetDeviceInfoResponse } from "@zmkfirmware/zmk-studio-ts-client/core";
 import type { ListCustomSubsystemResponse } from "@zmkfirmware/zmk-studio-ts-client/custom";
 import type { UseZMKAppReturn, ZMKAppState } from "../useZMKApp";
-import { ZMKAppContext } from "../ZMKAppContext";
+export { ZMKAppProvider } from "../ZMKAppContext";
 
 /**
  * Creates a mock RpcTransport for testing
@@ -177,37 +176,6 @@ export function createConnectedMockZMKApp(options: {
       return subsystem || null;
     },
   });
-}
-
-/**
- * Test wrapper component that provides ZMKAppContext
- * Useful for testing components that consume the ZMK app context
- * 
- * @example
- * ```tsx
- * import { render } from '@testing-library/react';
- * import { ZMKAppProvider, createMockZMKApp } from '@cormoran/zmk-studio-react-hook/testing';
- * 
- * const mockZMKApp = createMockZMKApp({ isConnected: true });
- * render(
- *   <ZMKAppProvider value={mockZMKApp}>
- *     <YourComponent />
- *   </ZMKAppProvider>
- * );
- * ```
- */
-export function ZMKAppProvider({
-  children,
-  value,
-}: {
-  children: React.ReactNode;
-  value: UseZMKAppReturn | null;
-}): React.ReactElement {
-  return React.createElement(
-    ZMKAppContext.Provider,
-    { value },
-    children
-  );
 }
 
 /**

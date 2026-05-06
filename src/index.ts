@@ -4,12 +4,14 @@
  */
 
 export { useZMKApp } from "./useZMKApp";
-export {
-  ZMKCustomSubsystem,
-  ZMKCustomSubsystemError,
-} from "./ZMKCustomSubsystem";
+export { ZMKCustomSubsystem, ZMKCustomSubsystemError } from "./ZMKCustomSubsystem";
 export { ZMKConnection } from "./ZMKConnection";
-export { ZMKAppContext } from "./ZMKAppContext";
+export {
+  ZMKAppContext,
+  ZMKAppProvider,
+  useRequiredZMKAppContext,
+  useZMKAppContext,
+} from "./ZMKAppContext";
 export { withTimeout } from "./utils";
 
 export type {
@@ -18,3 +20,4 @@ export type {
   NotificationSubscription,
 } from "./useZMKApp";
 export type { ZMKConnectionProps } from "./ZMKConnection";
+export type { ZMKAppProviderProps } from "./ZMKAppContext";

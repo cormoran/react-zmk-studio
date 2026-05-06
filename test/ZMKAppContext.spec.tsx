@@ -4,23 +4,16 @@
 
 import React, { useContext } from "react";
 import { render, screen } from "@testing-library/react";
-import { ZMKAppContext } from "../src/ZMKAppContext";
+import {
+  ZMKAppContext,
+  ZMKAppProvider,
+  useRequiredZMKAppContext,
+  useZMKAppContext,
+} from "../src/ZMKAppContext";
+import { createMockZMKApp } from "../src/testing";
 
 describe("ZMKAppContext", () => {
-  const mockZMKApp = {
-    state: {
-      connection: null,
-      deviceInfo: null,
-      customSubsystems: null,
-      isLoading: false,
-      error: null,
-    },
-    connect: jest.fn(),
-    disconnect: jest.fn(),
-    findSubsystem: jest.fn(),
-    isConnected: false,
-    onNotification: jest.fn(),
-  };
+  const mockZMKApp = createMockZMKApp();
 
   it("should provide ZMK app context to children", () => {
     function TestComponent() {
@@ -39,17 +32,32 @@ describe("ZMKAppContext", () => {
 
   it("should allow null as context value", () => {
     function TestComponent() {
-      const zmkApp = useContext(ZMKAppContext);
+      const zmkApp = useZMKAppContext();
       return <div>Has Context: {zmkApp ? "Yes" : "No"}</div>;
     }
 
     render(
-      <ZMKAppContext.Provider value={null}>
+      <ZMKAppProvider value={null}>
         <TestComponent />
-      </ZMKAppContext.Provider>
+      </ZMKAppProvider>
     );
 
     expect(screen.getByText("Has Context: No")).toBeDefined();
+  });
+
+  it("should provide context through ZMKAppProvider", () => {
+    function TestComponent() {
+      const zmkApp = useZMKAppContext();
+      return <div>Connected via Provider: {zmkApp?.isConnected ? "Yes" : "No"}</div>;
+    }
+
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <TestComponent />
+      </ZMKAppProvider>
+    );
+
+    expect(screen.getByText("Connected via Provider: No")).toBeDefined();
   });
 
   it("should provide same instance to multiple children", () => {
@@ -81,13 +89,39 @@ describe("ZMKAppContext", () => {
 
   it("should return null when used outside provider", () => {
     function TestComponent() {
-      const zmkApp = useContext(ZMKAppContext);
+      const zmkApp = useZMKAppContext();
       return <div>Context: {zmkApp ? "Exists" : "Null"}</div>;
     }
 
     render(<TestComponent />);
 
     expect(screen.getByText("Context: Null")).toBeDefined();
+  });
+
+  it("should throw when required hook is used outside provider", () => {
+    function TestComponent() {
+      useRequiredZMKAppContext();
+      return <div>Should not render</div>;
+    }
+
+    expect(() => render(<TestComponent />)).toThrow(
+      "ZMKAppContext is not available. Wrap this component in ZMKAppProvider or ZMKAppContext.Provider."
+    );
+  });
+
+  it("should return context from required hook when provider exists", () => {
+    function TestComponent() {
+      const zmkApp = useRequiredZMKAppContext();
+      return <div>Required Connected: {zmkApp.isConnected ? "Yes" : "No"}</div>;
+    }
+
+    render(
+      <ZMKAppProvider value={mockZMKApp}>
+        <TestComponent />
+      </ZMKAppProvider>
+    );
+
+    expect(screen.getByText("Required Connected: No")).toBeDefined();
   });
 
   it("should provide access to all ZMK app methods", () => {
