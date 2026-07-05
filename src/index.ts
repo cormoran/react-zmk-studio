@@ -11,6 +11,12 @@ export {
 export { ZMKConnection } from "./ZMKConnection";
 export { ZMKAppContext } from "./ZMKAppContext";
 export { withTimeout } from "./utils";
+export { useStudioLockState, isUnlockRequiredError } from "./useStudioLockState";
+export {
+  getPairedSerialPorts,
+  connectToSerialPort,
+  connectToPairedSerial,
+} from "./serialReconnect";
 
 export type {
   ZMKAppState,
@@ -18,3 +24,7 @@ export type {
   NotificationSubscription,
 } from "./useZMKApp";
 export type { ZMKConnectionProps } from "./ZMKConnection";
+export type {
+  StudioLockState,
+  UseStudioLockStateReturn,
+} from "./useStudioLockState";

@@ -3,13 +3,18 @@
  */
 
 import React, { useContext } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { ZMKConnection } from "../src/ZMKConnection";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
 
 // Mock the useZMKApp hook
 jest.mock("../src/useZMKApp", () => ({
   useZMKApp: jest.fn(),
+}));
+
+// Mock serial auto-reconnect helpers
+jest.mock("../src/serialReconnect", () => ({
+  connectToPairedSerial: jest.fn(),
 }));
 
 describe("ZMKConnection", () => {
@@ -333,5 +338,159 @@ describe("ZMKConnection", () => {
 
     expect(screen.getByText("Device: Internal Device")).toBeDefined();
     expect(useZMKApp).toHaveBeenCalled();
+  });
+
+  describe("autoReconnect", () => {
+    const {
+      connectToPairedSerial,
+    } = require("../src/serialReconnect");
+
+    it("does not attempt reconnect when autoReconnect is not set", () => {
+      const connect = jest.fn();
+      useZMKApp.mockReturnValue({
+        state: {
+          connection: null,
+          deviceInfo: null,
+          customSubsystems: null,
+          isLoading: false,
+          error: null,
+        },
+        connect,
+        disconnect: jest.fn(),
+        isConnected: false,
+        findSubsystem: jest.fn(),
+        onNotification: jest.fn(),
+      });
+
+      render(
+        <ZMKConnection
+          renderDisconnected={() => <div>Disconnected</div>}
+          renderConnected={() => <div>Connected</div>}
+        />
+      );
+
+      expect(connectToPairedSerial).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
+    });
+
+    it("connects using a mocked paired serial port when autoReconnect is true", async () => {
+      const mockTransport = { label: "paired" } as RpcTransport;
+      connectToPairedSerial.mockResolvedValue(mockTransport);
+
+      const connect = jest.fn().mockResolvedValue(undefined);
+      useZMKApp.mockReturnValue({
+        state: {
+          connection: null,
+          deviceInfo: null,
+          customSubsystems: null,
+          isLoading: false,
+          error: null,
+        },
+        connect,
+        disconnect: jest.fn(),
+        isConnected: false,
+        findSubsystem: jest.fn(),
+        onNotification: jest.fn(),
+      });
+
+      render(
+        <ZMKConnection
+          autoReconnect
+          renderDisconnected={() => <div>Disconnected</div>}
+          renderConnected={() => <div>Connected</div>}
+        />
+      );
+
+      await waitFor(() => {
+        expect(connectToPairedSerial).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(connect).toHaveBeenCalled();
+      });
+
+      // connect() is called with a function that resolves to the paired transport
+      const connectFn = connect.mock.calls[0][0];
+      await expect(connectFn()).resolves.toBe(mockTransport);
+    });
+
+    it("stays silently disconnected when there are no paired ports", async () => {
+      connectToPairedSerial.mockResolvedValue(null);
+
+      const connect = jest.fn();
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      useZMKApp.mockReturnValue({
+        state: {
+          connection: null,
+          deviceInfo: null,
+          customSubsystems: null,
+          isLoading: false,
+          error: null,
+        },
+        connect,
+        disconnect: jest.fn(),
+        isConnected: false,
+        findSubsystem: jest.fn(),
+        onNotification: jest.fn(),
+      });
+
+      render(
+        <ZMKConnection
+          autoReconnect
+          renderDisconnected={() => <div>Disconnected</div>}
+          renderConnected={() => <div>Connected</div>}
+        />
+      );
+
+      await waitFor(() => {
+        expect(connectToPairedSerial).toHaveBeenCalled();
+      });
+
+      expect(connect).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(screen.getByText("Disconnected")).toBeDefined();
+
+      warnSpy.mockRestore();
+    });
+
+    it("stays silently disconnected and warns when connectToPairedSerial throws", async () => {
+      connectToPairedSerial.mockRejectedValue(new Error("device unplugged"));
+
+      const connect = jest.fn();
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      useZMKApp.mockReturnValue({
+        state: {
+          connection: null,
+          deviceInfo: null,
+          customSubsystems: null,
+          isLoading: false,
+          error: null,
+        },
+        connect,
+        disconnect: jest.fn(),
+        isConnected: false,
+        findSubsystem: jest.fn(),
+        onNotification: jest.fn(),
+      });
+
+      render(
+        <ZMKConnection
+          autoReconnect
+          renderDisconnected={() => <div>Disconnected</div>}
+          renderConnected={() => <div>Connected</div>}
+        />
+      );
+
+      await waitFor(() => {
+        expect(warnSpy).toHaveBeenCalled();
+      });
+
+      expect(connect).not.toHaveBeenCalled();
+      expect(screen.getByText("Disconnected")).toBeDefined();
+
+      warnSpy.mockRestore();
+    });
   });
 });

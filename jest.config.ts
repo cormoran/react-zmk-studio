@@ -10,6 +10,11 @@ const config: JestConfigWithTsJest = {
     "^@zmkfirmware/zmk-studio-ts-client/(.*)$":
       "<rootDir>/node_modules/@zmkfirmware/zmk-studio-ts-client/lib/$1.js",
   },
+  // @zmkfirmware/zmk-studio-ts-client ships untranspiled ESM (`import`/`export`)
+  // in node_modules; some of our code (e.g. useStudioLockState) imports runtime
+  // values (enums, MetaError) from its submodules, not just types, so it needs
+  // to be transformed too instead of being left as raw ESM.
+  transformIgnorePatterns: ["node_modules/(?!(@zmkfirmware)/)"],
   ...createDefaultPreset({
     useESM: true,
     isolateModules: true,

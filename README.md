@@ -137,6 +137,116 @@ function MyComponent() {
 }
 ```
 
+### Handling ZMK Studio's Lock State
+
+ZMK Studio can be locked on the device (via `&studio_unlock` or similar), in which case secured RPCs (custom subsystems, settings, etc.) fail with an `UNLOCK_REQUIRED` error until the user unlocks it. `useStudioLockState()` tracks this for you, and `isUnlockRequiredError()` recognizes the error so you can prompt the user and retry:
+
+```typescript
+import {
+  useStudioLockState,
+  isUnlockRequiredError,
+  useZMKApp,
+} from "@cormoran/zmk-studio-react-hook";
+
+function LockBanner() {
+  const { locked, lockState } = useStudioLockState();
+
+  if (lockState === "unknown") return null; // still querying the initial state
+  if (!locked) return null;
+
+  return <div>Studio is locked. Press &amp;studio_unlock on your keyboard to continue.</div>;
+}
+
+function SecuredAction({ service }: { service: ZMKCustomSubsystem }) {
+  const { lockState } = useStudioLockState();
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    try {
+      await service.callRPC(new Uint8Array([1, 2, 3]));
+      setError(null);
+    } catch (e) {
+      if (isUnlockRequiredError(e)) {
+        setError("Please press &studio_unlock on the keyboard, then try again.");
+      } else {
+        throw e;
+      }
+    }
+  };
+
+  // Once useStudioLockState reports "unlocked" again, clear the error and retry.
+  useEffect(() => {
+    if (lockState === "unlocked" && error) {
+      setError(null);
+      run();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockState]);
+
+  return (
+    <div>
+      <button onClick={run}>Run secured action</button>
+      {error && <div>{error}</div>}
+    </div>
+  );
+}
+```
+
+`lockState` is `"unknown"` until the hook's initial `core.getLockState` query resolves (right after connecting), then `"locked"` or `"unlocked"` from then on, kept in sync via `lockStateChanged` notifications. `locked` is a convenience boolean that treats `"unknown"` as `false` (optimistic), so you can ignore `lockState` entirely for simple UIs.
+
+### Serial Auto-Reconnect
+
+Web Serial remembers ports the user has granted permission for, so you can reconnect on page load without showing the browser's device picker again. Pass `autoReconnect` to `ZMKConnection`:
+
+```typescript
+import { ZMKConnection } from "@cormoran/zmk-studio-react-hook";
+import { connect as connect_serial } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+
+function MyComponent() {
+  return (
+    <ZMKConnection
+      autoReconnect
+      renderDisconnected={({ connect, isLoading }) => (
+        <button onClick={() => connect(connect_serial)} disabled={isLoading}>
+          {isLoading ? "Connecting..." : "Connect"}
+        </button>
+      )}
+      renderConnected={({ disconnect, deviceName }) => (
+        <div>
+          <div>Device: {deviceName}</div>
+          <button onClick={disconnect}>Disconnect</button>
+        </div>
+      )}
+    />
+  );
+}
+```
+
+On mount, `ZMKConnection` will (once) try to reconnect to the first previously-paired serial port. If there is none, or opening it fails (e.g. the device was unplugged), it silently stays in the disconnected state (at most a `console.warn`) so the user can still click "Connect" normally.
+
+If you're not using `ZMKConnection`, the same behavior is available as standalone functions:
+
+```typescript
+import {
+  getPairedSerialPorts,
+  connectToSerialPort,
+  connectToPairedSerial,
+} from "@cormoran/zmk-studio-react-hook";
+
+// Low-level: list ports the user has already granted permission for.
+const ports = await getPairedSerialPorts(); // [] if Web Serial is unavailable
+
+// Open one of them and build an RpcTransport (same shape as the ts-client's
+// transport/serial connect()).
+const transport = await connectToSerialPort(ports[0]);
+
+// Convenience: connect to the first paired port, or null if there is none.
+const transportOrNull = await connectToPairedSerial();
+if (transportOrNull) {
+  await zmkApp.connect(() => Promise.resolve(transportOrNull));
+}
+```
+
 ## Testing
 
 This library provides comprehensive test helpers to make testing your ZMK-based applications easier.
@@ -346,9 +456,14 @@ The library exports the following from `index.ts`:
 
 - `useZMKApp` - Main hook for ZMK device connection management
 - `ZMKAppContext` - React Context for sharing ZMK app state across components
-- `ZMKConnection` - Headless React component for connection UI
+- `ZMKConnection` - Headless React component for connection UI (supports `autoReconnect`)
 - `ZMKCustomSubsystem` - Service class for custom RPC communication
 - `ZMKCustomSubsystemError` - Error class for subsystem operations
+- `useStudioLockState` - Hook tracking ZMK Studio's lock state for the connected device
+- `isUnlockRequiredError` - Helper to detect the `UNLOCK_REQUIRED` meta error
+- `getPairedSerialPorts` - Lists previously-paired serial ports (no picker)
+- `connectToSerialPort` - Opens a given `SerialPort` and builds an `RpcTransport`
+- `connectToPairedSerial` - Connects to the first paired serial port, or `null`
 
 **TypeScript Types:**
 
@@ -356,6 +471,8 @@ The library exports the following from `index.ts`:
 - `UseZMKAppReturn` - Return type interface for useZMKApp
 - `NotificationSubscription` - Notification subscription type union
 - `ZMKConnectionProps` - Props interface for ZMKConnection component
+- `StudioLockState` - `"locked" | "unlocked" | "unknown"`
+- `UseStudioLockStateReturn` - Return type interface for useStudioLockState
 
 ### `ZMKAppContext`
 
@@ -525,6 +642,7 @@ Headless React component for connection management. Provides connection logic wi
 ```typescript
 interface ZMKConnectionProps {
   zmkApp?: UseZMKAppReturn; // Optional: use external ZMK app state
+  autoReconnect?: boolean; // Optional: silently reconnect to a paired serial port on mount (default false)
   renderDisconnected: (props: {
     connect: (connectFunction: () => Promise<RpcTransport>) => Promise<void>;
     isLoading: boolean;
@@ -563,6 +681,7 @@ interface ZMKConnectionProps {
   1. **Standalone**: `<ZMKConnection />` (creates own state)
   2. **Controlled**: `<ZMKConnection zmkApp={zmkApp} />` (uses external state)
 - Children of rendered content can use `useZMKAppContext()` to access ZMK state
+- When `autoReconnect` is `true`, on mount the component calls `connectToPairedSerial()` exactly once (guarded by a ref so React StrictMode's double-invoke and unmount races don't trigger it twice); if it resolves to a transport, `connect()` is called with it, otherwise (or on error) the component stays disconnected silently (`console.warn` at most, `state.error` is not set)
 
 ### `ZMKCustomSubsystem`
 
@@ -630,6 +749,63 @@ constructor(
 - This class is exported but not currently thrown by ZMKCustomSubsystem
 - Can be used in user code for consistent error handling
 - Extends native `Error` class
+
+### `useStudioLockState()`
+
+Hook tracking ZMK Studio's core lock state for the connected device.
+
+**Signature:**
+
+```typescript
+function useStudioLockState(): UseStudioLockStateReturn;
+
+interface UseStudioLockStateReturn {
+  locked: boolean;
+  lockState: "locked" | "unlocked" | "unknown";
+}
+```
+
+**Behavior:**
+
+- Reads `zmkApp` from `ZMKAppContext` (must be rendered under a `ZMKAppContext.Provider`, e.g. inside `ZMKConnection` or a manual provider around `useZMKApp()`)
+- On connect (and whenever `zmkApp.state.connection` changes), resets to `lockState: "unknown"`, then issues `call_rpc(connection, { core: { getLockState: true } })` (wrapped in `withTimeout`) to fetch the initial state
+- Subscribes to `zmkApp.onNotification({ type: "core", ... })` for `lockStateChanged` to stay in sync afterwards; unsubscribes on connection change/unmount
+- `lockState` stays `"unknown"` until the initial query resolves (or if there is no connection/context)
+- `locked` is `true` iff `lockState === "locked"` -- `"unknown"` is treated as `false` (optimistic), so simple UIs can just check `locked` without a third state
+
+**For Coding Agents:**
+
+- If the initial `getLockState` RPC call fails (e.g. timeout), the error is logged with `console.error` and `lockState` stays `"unknown"` -- it does not fall back to `"unlocked"`
+- Use `lockState === "unknown"` to distinguish "still loading" from "confirmed unlocked" if your UI needs that distinction (e.g. to avoid flashing a false-negative lock banner)
+
+### `isUnlockRequiredError(error: unknown): boolean`
+
+Helper to detect the `MetaError` raised by `call_rpc()` for a secured RPC call made while ZMK Studio is locked.
+
+```typescript
+function isUnlockRequiredError(error: unknown): boolean;
+```
+
+Returns `true` iff `error instanceof MetaError && error.condition === ErrorConditions.UNLOCK_REQUIRED` (both from `@zmkfirmware/zmk-studio-ts-client`). Use this in a `catch` block around subsystem/settings RPC calls to show an "please unlock Studio" prompt instead of a generic error.
+
+### Serial Auto-Reconnect Functions
+
+Low-level helpers backing `ZMKConnection`'s `autoReconnect` prop. Exported so they can be used standalone (e.g. with a custom connection UI, or outside React).
+
+```typescript
+function getPairedSerialPorts(): Promise<SerialPort[]>;
+function connectToSerialPort(port: SerialPort): Promise<RpcTransport>;
+function connectToPairedSerial(): Promise<RpcTransport | null>;
+```
+
+- **`getPairedSerialPorts()`** - Returns the ports previously granted via `navigator.serial.requestPort()` (no picker shown). Resolves to `[]` when `navigator.serial` is unavailable (unsupported browser, non-secure context, etc.) instead of throwing.
+- **`connectToSerialPort(port)`** - Opens `port` at baud rate 12500 and returns an `RpcTransport` identical in shape to `@zmkfirmware/zmk-studio-ts-client/transport/serial`'s `connect()` (same `label` derivation from `usbVendorId`/`usbProductId`, same abort-closes-the-port behavior). Throws if opening the port fails.
+- **`connectToPairedSerial()`** - Connects to the first paired port (`getPairedSerialPorts()[0]`). Returns `null` (never throws) when there are no paired ports; propagates errors from `connectToSerialPort()` if opening the port fails (e.g. device unplugged).
+
+**For Coding Agents:**
+
+- These are dependency-light: only the `RpcTransport` *type* is imported from the ts-client, so they don't require the ts-client's `transport/serial` module at runtime
+- `connectToPairedSerial()` returning `null` means "nothing to reconnect to" and should be handled by falling back to showing a manual "Connect" button, not treated as an error
 
 ### Test Helper API (from `@cormoran/zmk-studio-react-hook/testing`)
 
