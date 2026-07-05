@@ -18,6 +18,7 @@ import type {
   CustomNotification,
 } from "@zmkfirmware/zmk-studio-ts-client/custom";
 import { withTimeout } from "./utils";
+import { isUserCancelledError } from "./transportSupport";
 
 /**
  * Notification subscription types
@@ -92,6 +93,13 @@ export function useZMKApp(): UseZMKAppReturn {
 
   /**
    * Connect to a ZMK device
+   *
+   * If the user dismisses the browser's device picker (see
+   * {@link isUserCancelledError}), the attempt is abandoned silently:
+   * `isLoading` resets to `false` and `state.error` stays `null`, since
+   * cancelling a picker is a normal user action, not a failure. All other
+   * errors are logged and surfaced via `state.error`.
+   *
    * @param connectFunction - Function that creates and returns the transport connection
    */
   const connect = useCallback(
@@ -126,6 +134,12 @@ export function useZMKApp(): UseZMKAppReturn {
           error: null,
         });
       } catch (error) {
+        // User dismissed the device picker: not a failure, just stop loading.
+        if (isUserCancelledError(error)) {
+          setState((prev) => ({ ...prev, isLoading: false }));
+          return;
+        }
+
         console.error("Connection failed:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Unknown connection error";
