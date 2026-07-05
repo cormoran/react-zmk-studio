@@ -909,6 +909,98 @@ function connectToPairedSerial(): Promise<RpcTransport | null>;
 - These are dependency-light: only the `RpcTransport` *type* is imported from the ts-client, so they don't require the ts-client's `transport/serial` module at runtime
 - `connectToPairedSerial()` returning `null` means "nothing to reconnect to" and should be handled by falling back to showing a manual "Connect" button, not treated as an error
 
+### Transport Feature Detection
+
+```typescript
+function isWebSerialSupported(): boolean;
+function isWebBluetoothSupported(): boolean;
+```
+
+- **`isWebSerialSupported()`** - `true` iff `typeof navigator !== "undefined" && "serial" in navigator`.
+- **`isWebBluetoothSupported()`** - `true` iff `typeof navigator !== "undefined" && "bluetooth" in navigator`.
+
+Both Web Serial and Web Bluetooth are Chromium-only APIs (Chrome, Edge, Opera, ...; not Firefox or Safari) and are only exposed in a secure context (HTTPS, or `http://localhost` for local dev). These helpers return `false` (never throw) in unsupported browsers, non-secure contexts, and non-browser environments (SSR, tests), so apps can conditionally render connect buttons and show a "use Chrome/Edge over HTTPS" message when both are `false`.
+
+**For Coding Agents:**
+
+- Pure synchronous feature checks, no side effects, safe to call on every render
+- Do not confuse with runtime connection failures -- these only check API *availability*, not whether a device is actually present
+
+### `isUserCancelledError(error: unknown): boolean`
+
+```typescript
+function isUserCancelledError(error: unknown): boolean;
+```
+
+Detects errors that mean "the user dismissed the browser's device picker" -- a normal user action, not a connection failure. Returns `true` for:
+
+- the ts-client GATT transport's `UserCancelledError` (thrown by `@zmkfirmware/zmk-studio-ts-client/transport/gatt`'s `connect()` when the Bluetooth picker is cancelled). Detection is name-based (checks `.name` and walks the prototype chain for a constructor named `UserCancelledError`) rather than `instanceof`, since the ts-client class does not set `.name` and importing the transport module at runtime is avoided.
+- a `DOMException` with `name === "NotFoundError"` -- what `navigator.serial.requestPort()` and `navigator.bluetooth.requestDevice()` reject with when the user closes the picker without selecting a device.
+
+Returns `false` for all other errors, including non-Error values.
+
+**For Coding Agents:**
+
+- `useZMKApp`'s `connect()` uses this internally to swallow picker cancellations silently (see below); you generally don't need to call it yourself unless you have a hand-rolled `requestPort()`/`requestDevice()` call outside of `connect()`
+
+### `useCustomSubsystem()`
+
+Hook collapsing the common boilerplate of `useContext(ZMKAppContext)` → `findSubsystem(identifier)` → `new ZMKCustomSubsystem(connection, index)` → protobuf encode/decode into a single call.
+
+**Signature (overloaded):**
+
+```typescript
+function useCustomSubsystem(identifier: string): UseCustomSubsystemReturn;
+function useCustomSubsystem<TReq, TRes>(
+  identifier: string,
+  codec: Codec<TReq, TRes>
+): UseCustomSubsystemTypedReturn<TReq, TRes>;
+
+interface Codec<TReq, TRes> {
+  encode: (request: TReq) => Uint8Array;
+  decode: (payload: Uint8Array) => TRes;
+}
+
+interface UseCustomSubsystemReturn {
+  subsystem: { index: number; identifier: string } | null;
+  ready: boolean;
+  callRPC: (
+    payload: Uint8Array,
+    options?: { timeout?: number }
+  ) => Promise<Uint8Array | null>;
+}
+
+interface UseCustomSubsystemTypedReturn<TReq, TRes>
+  extends UseCustomSubsystemReturn {
+  call: (request: TReq, options?: { timeout?: number }) => Promise<TRes | null>;
+}
+```
+
+**Behavior:**
+
+- Reads `zmkApp` from `ZMKAppContext` (must be rendered under a `ZMKAppContext.Provider`, e.g. inside `ZMKConnection`); without a provider or connection, degrades gracefully to `{ subsystem: null, ready: false, ... }` instead of throwing
+- `subsystem` is the result of `zmkApp.findSubsystem(identifier)`, or `null` if not connected or not found
+- `ready` is `true` iff connected AND the subsystem was found
+- `callRPC(payload, options?)` internally reuses `ZMKCustomSubsystem.callRPC` (same `timeout` default of 5000ms); throws a descriptive `Error` synchronously-rejected promise when not `ready`, distinguishing "no connection" from "subsystem not found" in the message
+- When a `codec` is passed, the typed return also includes `call(request, options?)`, which encodes with `codec.encode`, calls `callRPC`, and decodes a non-null response with `codec.decode` (returns `null` if the device sent no payload); the raw `callRPC` stays available alongside `call`
+
+**Example (ts-proto generated messages):**
+
+```typescript
+import { useCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
+import { Request, Response } from "./your_generated_pb";
+
+const { ready, call } = useCustomSubsystem("your_name__template", {
+  encode: (r: Request) => Request.encode(r).finish(),
+  decode: Response.decode,
+});
+```
+
+**For Coding Agents:**
+
+- Prefer `useCustomSubsystem` over hand-rolling `findSubsystem` + `new ZMKCustomSubsystem(...)` in new code -- it removes the `useEffect`/`useState` boilerplate for tracking the resolved subsystem across reconnects
+- `ready` is the single flag to gate UI/calls on; don't separately check `subsystem !== null` and `zmkApp.isConnected`
+
 ### Test Helper API (from `@cormoran/zmk-studio-react-hook/testing`)
 
 The library provides comprehensive test utilities to simplify testing applications that use ZMK hooks.
