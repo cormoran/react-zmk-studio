@@ -92,6 +92,54 @@ describe("useZMKApp", () => {
     expect(result.current.isConnected).toBe(false);
   });
 
+  it("should silently ignore a user-cancelled picker (DOMException NotFoundError)", async () => {
+    const { result } = renderHook(() => useZMKApp());
+    const cancelError = new DOMException(
+      "No port selected by the user.",
+      "NotFoundError"
+    );
+    const connectFunction = jest.fn().mockRejectedValue(cancelError);
+
+    await act(async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+      await result.current.connect(connectFunction);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    expect(result.current.state.connection).toBeNull();
+    expect(result.current.state.isLoading).toBe(false);
+    expect(result.current.state.error).toBeNull();
+    expect(result.current.isConnected).toBe(false);
+  });
+
+  it("should silently ignore the GATT transport's UserCancelledError", async () => {
+    const { result } = renderHook(() => useZMKApp());
+    // Same shape as @zmkfirmware/zmk-studio-ts-client/transport/errors
+    class UserCancelledError extends Error {
+      constructor(m: string, opts?: ErrorOptions) {
+        super(m, opts);
+        Object.setPrototypeOf(this, UserCancelledError.prototype);
+      }
+    }
+    const connectFunction = jest
+      .fn()
+      .mockRejectedValue(
+        new UserCancelledError("User cancelled the connection attempt")
+      );
+
+    await act(async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+      await result.current.connect(connectFunction);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    expect(result.current.state.error).toBeNull();
+    expect(result.current.state.isLoading).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+  });
+
   it("should handle device info retrieval failure", async () => {
     const { result } = renderHook(() => useZMKApp());
 

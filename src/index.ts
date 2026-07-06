@@ -21,6 +21,12 @@ export {
   forgetRememberedSerialPort,
   findRememberedSerialPort,
 } from "./serialReconnect";
+export {
+  isWebSerialSupported,
+  isWebBluetoothSupported,
+  isUserCancelledError,
+} from "./transportSupport";
+export { useCustomSubsystem } from "./useCustomSubsystem";
 
 export type {
   ZMKAppState,
@@ -32,3 +38,8 @@ export type {
   StudioLockState,
   UseStudioLockStateReturn,
 } from "./useStudioLockState";
+export type {
+  Codec,
+  UseCustomSubsystemReturn,
+  UseCustomSubsystemTypedReturn,
+} from "./useCustomSubsystem";
