@@ -196,18 +196,17 @@ function SecuredAction({ service }: { service: ZMKCustomSubsystem }) {
 
 ### Serial Auto-Reconnect
 
-Web Serial remembers ports the user has granted permission for, so you can reconnect on page load without showing the browser's device picker again. Pass `autoReconnect` to `ZMKConnection`:
+Web Serial remembers ports the user has granted permission for, so you can reconnect on page load without showing the browser's device picker again. Pass `autoReconnect` to `ZMKConnection`, and use `connectSerial` (instead of the ts-client's own `transport/serial` `connect`) for the manual "Connect" button:
 
 ```typescript
-import { ZMKConnection } from "@cormoran/zmk-studio-react-hook";
-import { connect as connect_serial } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+import { ZMKConnection, connectSerial } from "@cormoran/zmk-studio-react-hook";
 
 function MyComponent() {
   return (
     <ZMKConnection
       autoReconnect
       renderDisconnected={({ connect, isLoading }) => (
-        <button onClick={() => connect(connect_serial)} disabled={isLoading}>
+        <button onClick={() => connect(connectSerial)} disabled={isLoading}>
           {isLoading ? "Connecting..." : "Connect"}
         </button>
       )}
@@ -222,7 +221,9 @@ function MyComponent() {
 }
 ```
 
-On mount, `ZMKConnection` will (once) try to reconnect to the first previously-paired serial port. If there is none, or opening it fails (e.g. the device was unplugged), it silently stays in the disconnected state (at most a `console.warn`) so the user can still click "Connect" normally.
+On mount, `ZMKConnection` will (once) try to reconnect to a previously-paired serial port. If the user has paired more than one device, it prefers whichever one was **last successfully connected to** (remembered in `sessionStorage` -- scoped to the current browser tab/session, not persisted indefinitely like `localStorage`) rather than blindly picking the first paired port; if nothing is remembered (or the remembered device is no longer paired), it falls back to the first paired port. If there are no paired ports at all, or opening one fails (e.g. the device was unplugged), it silently stays in the disconnected state (at most a `console.warn`) so the user can still click "Connect" normally.
+
+Using `connectSerial` for the manual connect button (rather than the ts-client's raw `transport/serial` `connect`) is what makes this work: it's what records "the user just picked this device" so a later `autoReconnect` prefers it. If you skip `connectSerial`, auto-reconnect still works, but always falls back to the first paired port since nothing gets remembered.
 
 If you're not using `ZMKConnection`, the same behavior is available as standalone functions:
 
@@ -230,22 +231,38 @@ If you're not using `ZMKConnection`, the same behavior is available as standalon
 import {
   getPairedSerialPorts,
   connectToSerialPort,
+  connectSerial,
   connectToPairedSerial,
+  rememberSerialPort,
+  findRememberedSerialPort,
+  forgetRememberedSerialPort,
 } from "@cormoran/zmk-studio-react-hook";
 
 // Low-level: list ports the user has already granted permission for.
 const ports = await getPairedSerialPorts(); // [] if Web Serial is unavailable
 
 // Open one of them and build an RpcTransport (same shape as the ts-client's
-// transport/serial connect()).
+// transport/serial connect()). Does NOT remember the port.
 const transport = await connectToSerialPort(ports[0]);
 
-// Convenience: connect to the first paired port, or null if there is none.
+// Shows the browser's device picker, opens the chosen port, and remembers it
+// for future connectToPairedSerial() calls.
+const pickedTransport = await connectSerial();
+
+// Convenience: reconnects to the remembered port if it's still paired,
+// otherwise the first paired port, or null if there are no paired ports.
 const transportOrNull = await connectToPairedSerial();
 if (transportOrNull) {
   await zmkApp.connect(() => Promise.resolve(transportOrNull));
 }
+
+// Building a custom connection UI? These let you manage the memory yourself:
+rememberSerialPort(ports[0], ports); // remember a specific port
+findRememberedSerialPort(ports); // SerialPort | null
+forgetRememberedSerialPort(); // e.g. call this from your own "Disconnect" handler
 ```
+
+**Limitation**: Web Serial doesn't expose a stable per-device identifier (like a USB serial number) in general, so multiple identical devices (same USB vendor/product ids) are disambiguated by their position among `getPorts()`'s results at the time they were remembered. If such ports are unplugged and re-paired in a different order, this may reconnect to the wrong (but same-model) device.
 
 ## Testing
 
@@ -463,7 +480,11 @@ The library exports the following from `index.ts`:
 - `isUnlockRequiredError` - Helper to detect the `UNLOCK_REQUIRED` meta error
 - `getPairedSerialPorts` - Lists previously-paired serial ports (no picker)
 - `connectToSerialPort` - Opens a given `SerialPort` and builds an `RpcTransport`
-- `connectToPairedSerial` - Connects to the first paired serial port, or `null`
+- `connectSerial` - Shows the device picker, opens the chosen port, and remembers it
+- `connectToPairedSerial` - Connects to the remembered port (or the first paired port), or `null`
+- `rememberSerialPort` - Records a port as the last-connected one (for custom connection UIs)
+- `findRememberedSerialPort` - Looks up the remembered port among a list of ports
+- `forgetRememberedSerialPort` - Clears the remembered port
 
 **TypeScript Types:**
 
@@ -795,17 +816,27 @@ Low-level helpers backing `ZMKConnection`'s `autoReconnect` prop. Exported so th
 ```typescript
 function getPairedSerialPorts(): Promise<SerialPort[]>;
 function connectToSerialPort(port: SerialPort): Promise<RpcTransport>;
+function connectSerial(): Promise<RpcTransport>;
 function connectToPairedSerial(): Promise<RpcTransport | null>;
+function rememberSerialPort(port: SerialPort, allPorts: SerialPort[]): void;
+function findRememberedSerialPort(ports: SerialPort[]): SerialPort | null;
+function forgetRememberedSerialPort(): void;
 ```
 
 - **`getPairedSerialPorts()`** - Returns the ports previously granted via `navigator.serial.requestPort()` (no picker shown). Resolves to `[]` when `navigator.serial` is unavailable (unsupported browser, non-secure context, etc.) instead of throwing.
-- **`connectToSerialPort(port)`** - Opens `port` at baud rate 12500 and returns an `RpcTransport` identical in shape to `@zmkfirmware/zmk-studio-ts-client/transport/serial`'s `connect()` (same `label` derivation from `usbVendorId`/`usbProductId`, same abort-closes-the-port behavior). Throws if opening the port fails.
-- **`connectToPairedSerial()`** - Connects to the first paired port (`getPairedSerialPorts()[0]`). Returns `null` (never throws) when there are no paired ports; propagates errors from `connectToSerialPort()` if opening the port fails (e.g. device unplugged).
+- **`connectToSerialPort(port)`** - Opens `port` at baud rate 12500 and returns an `RpcTransport` identical in shape to `@zmkfirmware/zmk-studio-ts-client/transport/serial`'s `connect()` (same `label` derivation from `usbVendorId`/`usbProductId`, same abort-closes-the-port behavior). Throws if opening the port fails. Does **not** remember the port.
+- **`connectSerial()`** - Shows the browser's device picker (`navigator.serial.requestPort()`), opens the chosen port via `connectToSerialPort`, and remembers it via `rememberSerialPort` so a later `connectToPairedSerial()` prefers it. Throws whatever `requestPort()` rejects with, including a user-cancelled picker (`DOMException` named `"NotFoundError"`).
+- **`connectToPairedSerial()`** - Connects to the remembered port (see below) if it's still among the paired ports, otherwise falls back to the first paired port (`getPairedSerialPorts()[0]`). Re-remembers the port it connects to. Returns `null` (never throws) when there are no paired ports at all; propagates errors from `connectToSerialPort()` if opening the port fails (e.g. device unplugged).
+- **`rememberSerialPort(port, allPorts)`** - Records `port` (found among `allPorts`, the full paired-ports list) in `sessionStorage` as the last-connected device, keyed by USB vendor/product id plus its position among any ports sharing those same ids (see the Limitation note in the Serial Auto-Reconnect section above). No-ops silently if `sessionStorage` is unavailable or `port` has no USB vendor/product id.
+- **`findRememberedSerialPort(ports)`** - Returns the remembered port from `ports`, or `null` if nothing is remembered, storage is unavailable, or the remembered device isn't in `ports`.
+- **`forgetRememberedSerialPort()`** - Clears the remembered port. Useful to call from a manual "Disconnect" handler so the next auto-reconnect doesn't immediately reconnect to the same device.
 
 **For Coding Agents:**
 
 - These are dependency-light: only the `RpcTransport` *type* is imported from the ts-client, so they don't require the ts-client's `transport/serial` module at runtime
 - `connectToPairedSerial()` returning `null` means "nothing to reconnect to" and should be handled by falling back to showing a manual "Connect" button, not treated as an error
+- The remembered-port state lives in `sessionStorage` (cleared when the tab/browser session ends), not `localStorage` -- it is intentionally short-lived, not a permanent "default device" setting
+- Only `connectSerial()` and `connectToPairedSerial()` write to the remembered-port state automatically. If an app's manual "Connect" button uses the ts-client's raw `transport/serial` `connect()` instead of `connectSerial()`, nothing gets remembered from manual connects, and `connectToPairedSerial()` always falls back to the first paired port
 
 ### Test Helper API (from `@cormoran/zmk-studio-react-hook/testing`)
 
