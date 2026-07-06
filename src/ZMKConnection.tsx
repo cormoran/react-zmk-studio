@@ -3,15 +3,26 @@
  * A headless component providing connection management UI logic without styling
  */
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useZMKApp } from "./useZMKApp";
 import type { UseZMKAppReturn } from "./useZMKApp";
 import { ZMKAppContext } from "./ZMKAppContext";
 import type { RpcTransport } from "@zmkfirmware/zmk-studio-ts-client/transport/index";
+import { connectToPairedSerial } from "./serialReconnect";
 
 export interface ZMKConnectionProps {
   /** Optional external ZMK app state. If provided, ZMKConnection won't create its own useZMKApp instance */
   zmkApp?: UseZMKAppReturn;
+  /**
+   * When `true`, attempt to reconnect (once, on mount) to a previously
+   * paired serial port via `navigator.serial.getPorts()` -- no device picker
+   * is shown. If there is no paired port, or the attempt fails, the
+   * component silently stays disconnected (a `console.warn` is emitted at
+   * most; `state.error` is not set).
+   *
+   * Defaults to `false`.
+   */
+  autoReconnect?: boolean;
   /** Render prop for when disconnected */
   renderDisconnected: (props: {
     connect: (connectFunction: () => Promise<RpcTransport>) => Promise<void>;
@@ -40,6 +51,7 @@ export interface ZMKConnectionProps {
  */
 export function ZMKConnection({
   zmkApp: externalZmkApp,
+  autoReconnect = false,
   renderDisconnected,
   renderConnected,
 }: ZMKConnectionProps) {
@@ -55,6 +67,35 @@ export function ZMKConnection({
   ) => {
     await connect(connectFunction);
   };
+
+  // Attempt a silent, one-shot reconnect to a previously paired serial port
+  // on mount. Guarded by a ref so React StrictMode's double-invoke of
+  // effects (and unmount races) don't trigger it twice or act on a stale
+  // component instance.
+  const autoReconnectAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!autoReconnect || autoReconnectAttemptedRef.current) return;
+    autoReconnectAttemptedRef.current = true;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const transport = await connectToPairedSerial();
+        if (!transport || cancelled) return;
+        await connect(() => Promise.resolve(transport));
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Auto-reconnect to paired serial port failed:", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoReconnect]);
 
   // Prepare render content
   let content: React.ReactElement;
