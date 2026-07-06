@@ -15,7 +15,11 @@ export { useStudioLockState, isUnlockRequiredError } from "./useStudioLockState"
 export {
   getPairedSerialPorts,
   connectToSerialPort,
+  connectSerial,
   connectToPairedSerial,
+  rememberSerialPort,
+  forgetRememberedSerialPort,
+  findRememberedSerialPort,
 } from "./serialReconnect";
 export {
   isWebSerialSupported,
