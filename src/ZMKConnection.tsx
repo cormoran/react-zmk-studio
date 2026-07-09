@@ -23,6 +23,16 @@ export interface ZMKConnectionProps {
    * Defaults to `false`.
    */
   autoReconnect?: boolean;
+  /**
+   * How long (ms) to wait for the device to answer the initial RPC handshake
+   * before giving up on a connect attempt. Forwarded to the internally
+   * created `useZMKApp` -- ignored when an external `zmkApp` is supplied (pass
+   * the option to your own `useZMKApp(...)` call instead). Defaults to 5000.
+   *
+   * Without this, reconnecting to a paired-but-unresponsive device (e.g. one
+   * sitting in the bootloader) would hang forever waiting for a response.
+   */
+  connectTimeoutMs?: number;
   /** Render prop for when disconnected */
   renderDisconnected: (props: {
     connect: (connectFunction: () => Promise<RpcTransport>) => Promise<void>;
@@ -52,11 +62,12 @@ export interface ZMKConnectionProps {
 export function ZMKConnection({
   zmkApp: externalZmkApp,
   autoReconnect = false,
+  connectTimeoutMs,
   renderDisconnected,
   renderConnected,
 }: ZMKConnectionProps) {
   // Always call useZMKApp unconditionally (React hooks rule)
-  const internalZmkApp = useZMKApp();
+  const internalZmkApp = useZMKApp({ connectTimeoutMs });
   // Use external zmkApp if provided, otherwise use internal instance
   const zmkApp = externalZmkApp ?? internalZmkApp;
 

@@ -17,8 +17,36 @@ import type {
   ListCustomSubsystemResponse,
   CustomNotification,
 } from "@zmkfirmware/zmk-studio-ts-client/custom";
-import { withTimeout } from "./utils";
 import { isUserCancelledError } from "./transportSupport";
+
+/**
+ * Default time to wait for the device to complete the RPC handshake
+ * (`getDeviceInfo` + `listCustomSubsystems`) before giving up. See
+ * {@link UseZMKAppOptions.connectTimeoutMs}.
+ */
+export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+
+/** Error message surfaced (via `state.error`) when a connect times out. */
+export const CONNECT_TIMEOUT_ERROR =
+  "Connection timed out: the device did not respond.";
+
+export interface UseZMKAppOptions {
+  /**
+   * How long (ms) to wait for the device to answer the initial RPC handshake
+   * before aborting the attempt. Defaults to
+   * {@link DEFAULT_CONNECT_TIMEOUT_MS}.
+   *
+   * This matters for auto-reconnect and for devices that are paired/open but
+   * unresponsive (e.g. sitting in the bootloader, or advertising Studio while
+   * not actually answering): `call_rpc` holds a process-wide mutex while
+   * awaiting a response, so without a timeout a silent device hangs the
+   * connect forever *and* wedges every later RPC behind the never-released
+   * mutex. On timeout we abort the connection, which errors the RPC streams,
+   * releases that mutex, and closes the underlying transport (serial port),
+   * leaving the app free to retry.
+   */
+  connectTimeoutMs?: number;
+}
 
 /**
  * Notification subscription types
@@ -66,7 +94,10 @@ export interface UseZMKAppReturn {
  * Hook for managing ZMK application state
  * Handles connection lifecycle, device discovery, and subsystem enumeration
  */
-export function useZMKApp(): UseZMKAppReturn {
+export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
+  const connectTimeoutMs =
+    options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+
   const [state, setState] = useState<ZMKAppState>({
     connection: null,
     deviceInfo: null,
@@ -107,25 +138,51 @@ export function useZMKApp(): UseZMKAppReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       // Create new AbortController for this connection
-      abortControllerRef.current = new AbortController();
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      // Set once the handshake watchdog fires, so the catch/guard below can
+      // report the timeout rather than the generic abort/`null` symptom it
+      // triggers downstream.
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
         // Step 1: Establish transport and RPC connection
         const transport = await connectFunction();
         const connection = create_rpc_connection(transport, {
-          signal: abortControllerRef.current.signal,
+          signal: abortController.signal,
         });
 
-        // Step 2: Fetch device information
+        // Step 2: Arm the handshake watchdog. Aborting (rather than just
+        // racing a timer) is essential: `call_rpc` holds a process-wide mutex
+        // while awaiting its response, so a silent device would otherwise
+        // deadlock this connect *and* every future RPC. Aborting errors the
+        // response stream, which rejects the pending read, releases the mutex,
+        // and tears down the transport (closing the serial port).
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          abortController.abort(new Error(CONNECT_TIMEOUT_ERROR));
+        }, connectTimeoutMs);
+
+        // Step 3: Fetch device information
         const deviceInfo = await fetchDeviceInfo(connection);
         if (!deviceInfo) {
-          throw new Error("Failed to get device information");
+          throw new Error(
+            timedOut ? CONNECT_TIMEOUT_ERROR : "Failed to get device information"
+          );
         }
 
-        // Step 3: Fetch custom subsystems (optional - won't fail connection)
+        // Step 4: Fetch custom subsystems (optional - won't fail connection)
         const customSubsystems = await fetchCustomSubsystems(connection);
 
-        // Step 4: Update state with successful connection
+        // A timeout during subsystem discovery still aborts the connection, so
+        // don't present it as connected even though that step swallows errors.
+        if (timedOut) {
+          throw new Error(CONNECT_TIMEOUT_ERROR);
+        }
+
+        // Step 5: Update state with successful connection
         setState({
           connection,
           deviceInfo,
@@ -140,18 +197,26 @@ export function useZMKApp(): UseZMKAppReturn {
           return;
         }
 
+        const errorMessage = timedOut
+          ? CONNECT_TIMEOUT_ERROR
+          : error instanceof Error
+            ? error.message
+            : "Unknown connection error";
+
         console.error("Connection failed:", error);
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown connection error";
 
         setState((prev) => ({
           ...prev,
           isLoading: false,
           error: errorMessage,
         }));
+      } finally {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
       }
     },
-    []
+    [connectTimeoutMs]
   );
 
   /**
@@ -161,11 +226,9 @@ export function useZMKApp(): UseZMKAppReturn {
     connection: RpcConnection
   ): Promise<GetDeviceInfoResponse | null> => {
     try {
-      const response = await withTimeout(
-        call_rpc(connection, {
-          core: { getDeviceInfo: true },
-        })
-      );
+      const response = await call_rpc(connection, {
+        core: { getDeviceInfo: true },
+      });
       return response.core?.getDeviceInfo || null;
     } catch (error) {
       console.error("Failed to get device info", error);
@@ -180,11 +243,9 @@ export function useZMKApp(): UseZMKAppReturn {
     connection: RpcConnection
   ): Promise<ListCustomSubsystemResponse | null> => {
     try {
-      const response = await withTimeout(
-        call_rpc(connection, {
-          custom: { listCustomSubsystems: {} },
-        })
-      );
+      const response = await call_rpc(connection, {
+        custom: { listCustomSubsystems: {} },
+      });
       return response.custom?.listCustomSubsystems || null;
     } catch (error) {
       console.error("Failed to get custom subsystems", error);
