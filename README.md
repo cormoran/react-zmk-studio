@@ -648,8 +648,16 @@ Main hook for managing ZMK device connections. This hook handles the complete li
 **Signature:**
 
 ```typescript
-function useZMKApp(): UseZMKAppReturn;
+function useZMKApp(options?: UseZMKAppOptions): UseZMKAppReturn;
+
+interface UseZMKAppOptions {
+  // How long (ms) to wait for the device to answer the initial RPC handshake
+  // before aborting the connect attempt. Default: 5000.
+  connectTimeoutMs?: number;
+}
 ```
+
+`connectTimeoutMs` guards against a paired-but-unresponsive device (e.g. one sitting in the bootloader, or advertising Studio without answering): `call_rpc` holds a process-wide mutex while awaiting a response, so without a timeout a silent device hangs `connect()` forever _and_ wedges every later RPC behind the never-released mutex. On timeout, `connect()` aborts the connection -- which errors the RPC streams (releasing the mutex), closes the transport, and sets `state.error` to `CONNECT_TIMEOUT_ERROR` -- so the app is free to retry. This is what keeps `autoReconnect` from hanging indefinitely on a device that no longer responds.
 
 **Returns: `UseZMKAppReturn`**
 
@@ -766,6 +774,7 @@ Headless React component for connection management. Provides connection logic wi
 interface ZMKConnectionProps {
   zmkApp?: UseZMKAppReturn; // Optional: use external ZMK app state
   autoReconnect?: boolean; // Optional: silently reconnect to a paired serial port on mount (default false)
+  connectTimeoutMs?: number; // Optional: handshake timeout (ms) forwarded to the internal useZMKApp; ignored when zmkApp is supplied (default 5000)
   renderDisconnected: (props: {
     connect: (connectFunction: () => Promise<RpcTransport>) => Promise<void>;
     isLoading: boolean;
@@ -804,7 +813,7 @@ interface ZMKConnectionProps {
   1. **Standalone**: `<ZMKConnection />` (creates own state)
   2. **Controlled**: `<ZMKConnection zmkApp={zmkApp} />` (uses external state)
 - Children of rendered content can use `useZMKAppContext()` to access ZMK state
-- When `autoReconnect` is `true`, on mount the component calls `connectToPairedSerial()` exactly once (guarded by a ref so React StrictMode's double-invoke and unmount races don't trigger it twice); if it resolves to a transport, `connect()` is called with it, otherwise (or on error) the component stays disconnected silently (`console.warn` at most, `state.error` is not set)
+- When `autoReconnect` is `true`, on mount the component calls `connectToPairedSerial()` exactly once (guarded by a ref so React StrictMode's double-invoke and unmount races don't trigger it twice); if it resolves to a transport, `connect()` is called with it, otherwise (or on error) the component stays disconnected silently (`console.warn` at most, `state.error` is not set). If the paired device is still present but unresponsive, `connect()` gives up after `connectTimeoutMs` (default 5000) rather than hanging -- see `useZMKApp`'s `connectTimeoutMs` option above
 
 ### `ZMKCustomSubsystem`
 

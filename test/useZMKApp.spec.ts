@@ -3,7 +3,7 @@
  */
 
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { useZMKApp } from "../src/useZMKApp";
+import { useZMKApp, CONNECT_TIMEOUT_ERROR } from "../src/useZMKApp";
 import { 
   setupZMKMocks, 
   createMockTransport,
@@ -156,6 +156,48 @@ describe("useZMKApp", () => {
 
     expect(result.current.state.error).toBe("Failed to get device information");
     expect(result.current.isConnected).toBe(false);
+  });
+
+  it("should give up and abort the connection if the device never responds", async () => {
+    const { result } = renderHook(() =>
+      // Tiny timeout so the test doesn't actually wait 5s.
+      useZMKApp({ connectTimeoutMs: 20 })
+    );
+
+    // Capture the AbortSignal handed to create_rpc_connection so the mock
+    // call_rpc can behave like the real one: its pending read only settles
+    // when the connection is aborted (here, by the handshake watchdog).
+    let capturedSignal: AbortSignal | undefined;
+    const connection = createMockConnection({ notifications: [] });
+    mocks.create_rpc_connection.mockImplementation(
+      (_transport: unknown, opts: { signal: AbortSignal }) => {
+        capturedSignal = opts.signal;
+        return connection;
+      }
+    );
+    mocks.call_rpc.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          capturedSignal?.addEventListener("abort", () =>
+            reject(capturedSignal?.reason ?? new Error("aborted"))
+          );
+        })
+    );
+
+    const connectFunction = jest.fn().mockResolvedValue(mocks.mockTransport);
+
+    await act(async () => {
+      const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+      await result.current.connect(connectFunction);
+      spy.mockRestore();
+    });
+
+    // The watchdog aborted the connection (releasing the ts-client's RPC
+    // mutex and closing the transport) rather than hanging forever.
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.state.isLoading).toBe(false);
+    expect(result.current.state.error).toBe(CONNECT_TIMEOUT_ERROR);
   });
 
   it("should disconnect from device", async () => {

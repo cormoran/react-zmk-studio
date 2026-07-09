@@ -3,7 +3,11 @@
  * React hooks wrapper for ZMK Studio TypeScript client
  */
 
-export { useZMKApp } from "./useZMKApp";
+export {
+  useZMKApp,
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  CONNECT_TIMEOUT_ERROR,
+} from "./useZMKApp";
 export {
   ZMKCustomSubsystem,
   ZMKCustomSubsystemError,
@@ -31,6 +35,7 @@ export { useCustomSubsystem } from "./useCustomSubsystem";
 export type {
   ZMKAppState,
   UseZMKAppReturn,
+  UseZMKAppOptions,
   NotificationSubscription,
 } from "./useZMKApp";
 export type { ZMKConnectionProps } from "./ZMKConnection";
