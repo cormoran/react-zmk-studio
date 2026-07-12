@@ -20,6 +20,7 @@ describe("ZMKAppContext", () => {
     findSubsystem: jest.fn(),
     isConnected: false,
     onNotification: jest.fn(),
+    lastPacketMs: null,
   };
 
   it("should provide ZMK app context to children", () => {

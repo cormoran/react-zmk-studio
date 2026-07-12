@@ -32,9 +32,13 @@ export const CONNECT_TIMEOUT_ERROR =
 
 export interface UseZMKAppOptions {
   /**
-   * How long (ms) to wait for the device to answer the initial RPC handshake
-   * before aborting the attempt. Defaults to
-   * {@link DEFAULT_CONNECT_TIMEOUT_MS}.
+   * Inactivity timeout (ms) for the initial device handshake
+   * (`getDeviceInfo` + `listCustomSubsystems`) before the connect attempt is
+   * aborted. Defaults to {@link DEFAULT_CONNECT_TIMEOUT_MS}.
+   *
+   * The timer is *activity-based*: every byte that arrives from the transport
+   * pushes the deadline out, so a slow-but-responsive device is never cut off
+   * mid-handshake -- only genuine silence for this many ms triggers the abort.
    *
    * This matters for auto-reconnect and for devices that are paired/open but
    * unresponsive (e.g. sitting in the bootloader, or advertising Studio while
@@ -88,6 +92,14 @@ export interface UseZMKAppReturn {
   isConnected: boolean;
   /** Subscribe to notifications */
   onNotification: (subscription: NotificationSubscription) => () => void;
+  /**
+   * Returns the epoch-ms timestamp of the last byte received from the
+   * connected transport. Used by callRPC to implement a sliding-window
+   * inactivity timeout: the timeout only fires if the device has been silent
+   * for `timeoutMs` ms, so an actively-responding device is never cut off.
+   * Returns `null` when no transport is active.
+   */
+  lastPacketMs: (() => number) | null;
 }
 
 /**
@@ -107,6 +119,8 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
   });
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastPacketMsRef = useRef<number>(Date.now());
+  const lastPacketMsFnRef = useRef<(() => number) | null>(null);
 
   // Consolidated callbacks for official notification types
   const notificationCallbacksRef = useRef<{
@@ -137,6 +151,10 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
     async (connectFunction: () => Promise<RpcTransport>) => {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
+      // Clear last-packet tracking; a new connection starts fresh.
+      lastPacketMsRef.current = Date.now();
+      lastPacketMsFnRef.current = null;
+
       // Create new AbortController for this connection
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
@@ -147,10 +165,33 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
       let timedOut = false;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
+      let transport: RpcTransport | null = null;
       try {
-        // Step 1: Establish transport and RPC connection
-        const transport = await connectFunction();
-        const connection = create_rpc_connection(transport, {
+        // Step 1: Establish transport and wrap its readable stream with an
+        // activity tracker so any incoming byte updates the last-packet
+        // timestamp. This drives both the handshake watchdog below and the
+        // sliding-window inactivity timeout used by callRPC.
+        transport = await connectFunction();
+
+        const lastPacketRef = { current: Date.now() };
+        const trackedReadable = transport.readable.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+              lastPacketRef.current = Date.now();
+              controller.enqueue(chunk);
+            },
+          })
+        );
+        lastPacketMsRef.current = lastPacketRef.current;
+        const lastPacketMs = () => lastPacketRef.current;
+        lastPacketMsFnRef.current = lastPacketMs;
+
+        const trackedTransport: RpcTransport = {
+          ...transport,
+          readable: trackedReadable,
+        };
+
+        const connection = create_rpc_connection(trackedTransport, {
           signal: abortController.signal,
         });
 
@@ -160,10 +201,23 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
         // deadlock this connect *and* every future RPC. Aborting errors the
         // response stream, which rejects the pending read, releases the mutex,
         // and tears down the transport (closing the serial port).
-        timeoutId = setTimeout(() => {
-          timedOut = true;
-          abortController.abort(new Error(CONNECT_TIMEOUT_ERROR));
-        }, connectTimeoutMs);
+        //
+        // The watchdog is activity-based: rather than a single fixed deadline
+        // from connect-start, it re-checks against the last-packet timestamp
+        // and only aborts once the device has been silent for
+        // `connectTimeoutMs`. A slow-but-responsive device that keeps sending
+        // bytes therefore keeps pushing the deadline out and is never cut off
+        // mid-handshake.
+        const armWatchdog = () => {
+          const remaining = connectTimeoutMs - (Date.now() - lastPacketRef.current);
+          if (remaining <= 0) {
+            timedOut = true;
+            abortController.abort(new Error(CONNECT_TIMEOUT_ERROR));
+          } else {
+            timeoutId = setTimeout(armWatchdog, remaining);
+          }
+        };
+        timeoutId = setTimeout(armWatchdog, connectTimeoutMs);
 
         // Step 3: Fetch device information
         const deviceInfo = await fetchDeviceInfo(connection);
@@ -191,6 +245,10 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
           error: null,
         });
       } catch (error) {
+        // Properly close the transport so we don't leave a dangling connection.
+        transport?.abortController.abort(error);
+        lastPacketMsFnRef.current = null;
+
         // User dismissed the device picker: not a failure, just stop loading.
         if (isUserCancelledError(error)) {
           setState((prev) => ({ ...prev, isLoading: false }));
@@ -263,6 +321,8 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+
+    lastPacketMsFnRef.current = null;
 
     // Clear all notification subscriptions
     notificationCallbacksRef.current.core.clear();
@@ -443,6 +503,7 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
   );
 
   const isConnected = !!state.connection;
+  const lastPacketMs = lastPacketMsFnRef.current;
 
   return {
     state,
@@ -451,5 +512,6 @@ export function useZMKApp(options: UseZMKAppOptions = {}): UseZMKAppReturn {
     findSubsystem,
     isConnected,
     onNotification,
+    lastPacketMs,
   };
 }

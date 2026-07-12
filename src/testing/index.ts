@@ -14,14 +14,22 @@ import type { UseZMKAppReturn, ZMKAppState } from "../useZMKApp";
 import { ZMKAppContext } from "../ZMKAppContext";
 
 /**
- * Creates a mock RpcTransport for testing
+ * Creates a mock RpcTransport for testing.
+ * The `readable` is a real (but never-resolving) ReadableStream so that
+ * `connect()` can call `pipeThrough()` on it to set up activity tracking
+ * without errors.
  * @returns A mock transport with required properties
  */
 export function createMockTransport(): RpcTransport {
+  const readable = new ReadableStream<Uint8Array>({
+    start() {
+      // Never enqueues anything; remains open so piping does not immediately close.
+    },
+  });
   return {
     label: "test",
     abortController: new AbortController(),
-    readable: {} as ReadableStream<Uint8Array>,
+    readable,
     writable: {} as WritableStream<Uint8Array>,
   } as RpcTransport;
 }
@@ -137,6 +145,7 @@ export function createMockZMKApp(
     findSubsystem: jest.fn(),
     isConnected: state.connection !== null,
     onNotification: jest.fn().mockReturnValue(() => {}),
+    lastPacketMs: null,
     ...restOverrides,
   };
 }
