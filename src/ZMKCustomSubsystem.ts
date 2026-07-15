@@ -5,7 +5,7 @@
 
 import type { RpcConnection } from "@zmkfirmware/zmk-studio-ts-client";
 import { call_rpc } from "@zmkfirmware/zmk-studio-ts-client";
-import { withTimeout } from "./utils";
+import { withTimeout, withActivityTimeout } from "./utils";
 
 /**
  * Service class for communicating with ZMK custom subsystems via RPC
@@ -37,26 +37,33 @@ export class ZMKCustomSubsystem {
    * Send an RPC request to this subsystem
    * @param payload - Serialized protobuf payload to send
    * @param options - Optional configuration
-   * @param options.timeout - Timeout in milliseconds (default: 5000ms)
+   * @param options.timeout - Inactivity timeout in milliseconds (default: 5000ms).
+   *   When `lastPacketMs` is provided this is the sliding-window inactivity
+   *   timeout; otherwise it is a fixed deadline from the start of the call.
+   * @param options.lastPacketMs - Function returning the epoch-ms timestamp of
+   *   the last transport byte received. When provided the timeout only fires if
+   *   no bytes have arrived for `timeout` ms, so an actively-responding device
+   *   is never cut off mid-transfer.
    * @returns The response payload from the device, or null if no response
    * @throws Error if the RPC call fails or times out
    */
   async callRPC(
     payload: Uint8Array,
-    options?: { timeout?: number }
+    options?: { timeout?: number; lastPacketMs?: () => number }
   ): Promise<Uint8Array | null> {
     const timeout = options?.timeout ?? 5000;
-    const response = await withTimeout(
-      call_rpc(this.connection, {
-        custom: {
-          call: {
-            subsystemIndex: this.subsystemIndex,
-            payload,
-          },
+    const lastPacketMs = options?.lastPacketMs;
+    const rpcPromise = call_rpc(this.connection, {
+      custom: {
+        call: {
+          subsystemIndex: this.subsystemIndex,
+          payload,
         },
-      }),
-      timeout
-    );
+      },
+    });
+    const response = lastPacketMs
+      ? await withActivityTimeout(rpcPromise, lastPacketMs, timeout)
+      : await withTimeout(rpcPromise, timeout);
     return response.custom?.call?.payload || null;
   }
 

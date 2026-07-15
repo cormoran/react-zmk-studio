@@ -14,7 +14,7 @@ export {
 } from "./ZMKCustomSubsystem";
 export { ZMKConnection } from "./ZMKConnection";
 export { ZMKAppContext } from "./ZMKAppContext";
-export { withTimeout } from "./utils";
+export { withTimeout, withActivityTimeout } from "./utils";
 export { useStudioLockState, isUnlockRequiredError } from "./useStudioLockState";
 export {
   getPairedSerialPorts,

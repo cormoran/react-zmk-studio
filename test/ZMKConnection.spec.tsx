@@ -40,6 +40,7 @@ describe("ZMKConnection", () => {
       isConnected: false,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     });
 
     render(
@@ -80,6 +81,7 @@ describe("ZMKConnection", () => {
       isConnected: true,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     });
 
     render(
@@ -115,6 +117,7 @@ describe("ZMKConnection", () => {
       isConnected: false,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     });
 
     render(
@@ -143,6 +146,7 @@ describe("ZMKConnection", () => {
       isConnected: false,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     });
 
     render(
@@ -175,6 +179,7 @@ describe("ZMKConnection", () => {
       isConnected: true,
       findSubsystem: mockFindSubsystem,
       onNotification: jest.fn(),
+      lastPacketMs: null,
     });
 
     render(
@@ -216,6 +221,7 @@ describe("ZMKConnection", () => {
       isConnected: true,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     };
 
     // useZMKApp should NOT be called when zmkApp prop is provided
@@ -273,6 +279,7 @@ describe("ZMKConnection", () => {
       isConnected: true,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     };
 
     useZMKApp.mockReturnValue(mockZmkApp);
@@ -325,6 +332,7 @@ describe("ZMKConnection", () => {
       isConnected: true,
       findSubsystem: jest.fn(),
       onNotification: jest.fn(),
+      lastPacketMs: null,
     };
 
     useZMKApp.mockReturnValue(internalZmkApp);
@@ -360,6 +368,7 @@ describe("ZMKConnection", () => {
         isConnected: false,
         findSubsystem: jest.fn(),
         onNotification: jest.fn(),
+      lastPacketMs: null,
       });
 
       render(
@@ -391,6 +400,7 @@ describe("ZMKConnection", () => {
         isConnected: false,
         findSubsystem: jest.fn(),
         onNotification: jest.fn(),
+      lastPacketMs: null,
       });
 
       render(
@@ -433,6 +443,7 @@ describe("ZMKConnection", () => {
         isConnected: false,
         findSubsystem: jest.fn(),
         onNotification: jest.fn(),
+      lastPacketMs: null,
       });
 
       render(
@@ -473,6 +484,7 @@ describe("ZMKConnection", () => {
         isConnected: false,
         findSubsystem: jest.fn(),
         onNotification: jest.fn(),
+      lastPacketMs: null,
       });
 
       render(

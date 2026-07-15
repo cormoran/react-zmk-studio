@@ -99,6 +99,8 @@ export function useCustomSubsystem<TReq, TRes>(
 
   const ready = service !== null;
 
+  const lastPacketMs = zmkApp?.lastPacketMs ?? null;
+
   const callRPC = useCallback(
     async (
       payload: Uint8Array,
@@ -112,9 +114,12 @@ export function useCustomSubsystem<TReq, TRes>(
               : "subsystem not found on the connected device")
         );
       }
-      return service.callRPC(payload, options);
+      return service.callRPC(payload, {
+        lastPacketMs: lastPacketMs ?? undefined,
+        ...options,
+      });
     },
-    [service, identifier, connection]
+    [service, identifier, connection, lastPacketMs]
   );
 
   const call = useCallback(

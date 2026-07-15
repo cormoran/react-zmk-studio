@@ -315,8 +315,13 @@ describe("useZMKApp", () => {
       expect(result.current.isConnected).toBe(true);
     });
 
+    // The transport passed to create_rpc_connection has its readable wrapped
+    // with an activity-tracking stream, so we only check the signal option.
     expect(mocks.create_rpc_connection).toHaveBeenCalledWith(
-      mocks.mockTransport,
+      expect.objectContaining({
+        label: mocks.mockTransport.label,
+        abortController: mocks.mockTransport.abortController,
+      }),
       expect.objectContaining({
         signal: expect.any(AbortSignal),
       })

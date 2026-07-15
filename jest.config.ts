@@ -3,6 +3,7 @@ import { type JestConfigWithTsJest, createDefaultPreset } from "ts-jest";
 const config: JestConfigWithTsJest = {
   preset: "ts-jest",
   testEnvironment: "jsdom",
+  setupFiles: ["<rootDir>/test/setup.ts"],
   // jest cannot resolve package.json "exports" field correctly yet
   moduleNameMapper: {
     "^@zmkfirmware/zmk-studio-ts-client$":
